@@ -5,7 +5,7 @@ import * as Location from 'expo-location';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 
 export default function App() {
-  const WEBSITE_URL = 'https://dealit-phase2.vercel.app';
+  const WEBSITE_URL = 'https://dealit.xyz';
   const webViewRef = useRef(null);
   const [canGoBack, setCanGoBack] = useState(false);
 
