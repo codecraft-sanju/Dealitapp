@@ -2,7 +2,7 @@
   "expo": {
     "name": "DealIt",
     "slug": "dealit-app",
-    "version": "1.0.4",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/applogo.png",
     "userInterfaceStyle": "light",
@@ -10,7 +10,8 @@
     "splash": {
       "image": "./assets/applogo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#7A43E6" 
+      
     },
     "ios": {
       "supportsTablet": true
