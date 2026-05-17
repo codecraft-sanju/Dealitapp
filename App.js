@@ -1,27 +1,32 @@
-
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-
 import { StyleSheet, StatusBar, BackHandler, View, Text, FlatList, Dimensions, TouchableOpacity, Animated, Easing, Image } from 'react-native';
-
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
-
-
 import { LinearGradient } from 'expo-linear-gradient';
-
-
-
 import * as SplashScreen from 'expo-splash-screen';
 
+// --> CHANGE START: Import Notifications and Device
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+// --> CHANGE END
 
 SplashScreen.preventAutoHideAsync();
 
-
 const { width, height } = Dimensions.get('window');
+
+// --> CHANGE START: Setup Notification Handler for foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+// --> CHANGE END
 
 const ONBOARDING_DATA = [
   {
@@ -53,7 +58,6 @@ const ONBOARDING_DATA = [
     color: '#E91E63', 
   }
 ];
-
 
 const AnimatedLoader = ({ isReadyToHide }) => {
   const scaleValue = useRef(new Animated.Value(0.8)).current;
@@ -123,13 +127,10 @@ const AnimatedLoader = ({ isReadyToHide }) => {
 
   return (
     <Animated.View style={[styles.loadingContainer, { opacity: containerOpacity }]} pointerEvents={isReadyToHide ? 'none' : 'auto'}>
-      {/* CHANGED START: Added LinearGradient to match the app logo vibe */}
       <LinearGradient
         colors={['#CBA4FA', '#7A43E6']}
         style={StyleSheet.absoluteFillObject}
       />
-      {/* CHANGED END */}
-      
       <Animated.View style={[
         styles.logoGlow, 
         { 
@@ -142,18 +143,15 @@ const AnimatedLoader = ({ isReadyToHide }) => {
         transform: [{ scale: scaleValue }],
         alignItems: 'center'
       }}>
-       
         <Image 
           source={require('./assets/applogo.png')} 
           style={{ width: 100, height: 100, resizeMode: 'contain', marginBottom: 16 }} 
         />
-   
         <Text style={styles.loaderText}>DealIt</Text>
       </Animated.View>
     </Animated.View>
   );
 };
-// --- CHANGES END ---
 
 const ICONS_LIST = ['cube-outline', 'watch-outline', 'headset-outline', 'game-controller-outline', 'phone-portrait-outline', 'laptop-outline'];
 
@@ -162,15 +160,12 @@ const OfflineGameScreen = ({ onRetry }) => {
   const [highScore, setHighScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [currentIcon, setCurrentIcon] = useState(ICONS_LIST[0]);
-
   const position = useRef(new Animated.ValueXY({ x: width / 2 - 40, y: height / 3 })).current;
   const targetScale = useRef(new Animated.Value(1)).current;
-  
   const timerAnim = useRef(new Animated.Value(1)).current;
 
   const startTimer = (currentScore) => {
     timerAnim.setValue(1);
-    
     const duration = Math.max(600, 2000 - (currentScore * 50));
 
     Animated.timing(timerAnim, {
@@ -242,7 +237,6 @@ const OfflineGameScreen = ({ onRetry }) => {
 
   return (
     <View style={styles.offlineContainer}>
-      
       <View style={styles.offlineHeader}>
         <Text style={styles.offlineTitle}>You're Offline!</Text>
         <Text style={styles.offlineDescription}>
@@ -313,10 +307,66 @@ export default function App() {
   const [isWebLoaded, setIsWebLoaded] = useState(false);
   const [minLoadTimePassed, setMinLoadTimePassed] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
-
-  
   const [appIsReady, setAppIsReady] = useState(false);
-  
+
+  // --> CHANGE START: Expo Notification States & Listeners
+  const [expoPushToken, setExpoPushToken] = useState('');
+  const responseListener = useRef();
+
+  useEffect(() => {
+    // Register for push notifications
+    registerForPushNotificationsAsync().then(token => {
+      if (token) setExpoPushToken(token);
+    });
+
+    // Handle user clicking on the notification
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      const urlToOpen = response.notification.request.content.data.url;
+      if (urlToOpen && webViewRef.current) {
+        // Force WebView to navigate to the exact URL
+        webViewRef.current.injectJavaScript(`
+          window.location.href = '${urlToOpen}';
+          true;
+        `);
+      }
+    });
+
+    return () => {
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
+  }, []);
+
+  // When WebView finishes loading, push the mobile token into its localStorage
+  useEffect(() => {
+    if (isWebLoaded && expoPushToken && webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        window.localStorage.setItem('dealit_mobile_token', '${expoPushToken}');
+        true;
+      `);
+    }
+  }, [isWebLoaded, expoPushToken]);
+
+  async function registerForPushNotificationsAsync() {
+    let token;
+    if (Device.isDevice) {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== 'granted') {
+        return null;
+      }
+      token = (await Notifications.getExpoPushTokenAsync({
+        projectId: "65591ba4-dc10-4d7b-8d5a-a45d13b44a8d", // From your eas.json
+      })).data;
+    }
+    return token;
+  }
+  // --> CHANGE END
 
   useEffect(() => {
     (async () => {
@@ -330,20 +380,16 @@ export default function App() {
       } catch (error) {
         setIsFirstLaunch(false);
       } finally {
-        // --- CHANGES START: Tell the app it has loaded local data ---
         setAppIsReady(true);
-        // --- CHANGES END ---
       }
     })();
   }, []);
 
-  // --- CHANGES START: Hide native splash screen safely ---
   const onLayoutRootView = useCallback(async () => {
     if (appIsReady) {
       await SplashScreen.hideAsync();
     }
   }, [appIsReady]);
-  // --- CHANGES END ---
 
   useEffect(() => {
     if (isFirstLaunch === false) {
@@ -532,9 +578,7 @@ export default function App() {
     );
   }
 
-  
   const isReadyToHideLoader = minLoadTimePassed && isWebLoaded;
-
 
   if (!isConnected) {
     return (
@@ -548,12 +592,9 @@ export default function App() {
   }
 
   return (
-    
     <SafeAreaProvider onLayout={onLayoutRootView}>
       <SafeAreaView style={styles.container}>
-        {/* CHANGED: Adjusted StatusBar color to blend nicely with the new purple background */}
         <StatusBar barStyle="light-content" backgroundColor="#7A43E6" />
-        
         
         <AnimatedLoader isReadyToHide={isReadyToHideLoader} />
 
@@ -569,7 +610,6 @@ export default function App() {
         />
       </SafeAreaView>
     </SafeAreaProvider>
-    // --- CHANGES END ---
   );
 }
 
@@ -581,7 +621,6 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    // CHANGED: Removed the black background so the LinearGradient shows clearly
     backgroundColor: 'transparent', 
     zIndex: 999, 
   },
@@ -590,11 +629,10 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     borderRadius: 75,
-    backgroundColor: '#ffffff', // CHANGED: Changed glow to white so it stands out on purple
+    backgroundColor: '#ffffff',
     opacity: 0.1,
     filter: [{ blur: 30 }],
   },
-  // CHANGED: Removed loaderIconContainer since we are using the Image directly now
   loaderText: {
     color: '#ffffff',
     fontSize: 24,
