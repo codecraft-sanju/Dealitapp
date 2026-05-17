@@ -65,6 +65,10 @@ const AnimatedLoader = ({ isReadyToHide }) => {
   const glowValue = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
 
+  // --> CHANGE START: Setup spin value for new loader
+  const spinValue = useRef(new Animated.Value(0)).current;
+  // --> CHANGE END
+
   useEffect(() => {
     const pulseAnimation = Animated.loop(
       Animated.parallel([
@@ -97,6 +101,17 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       ])
     );
 
+    // --> CHANGE START: Setup continuous spin animation
+    const spinAnimation = Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 1500,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    // --> CHANGE END
+
     Animated.parallel([
       Animated.timing(opacityValue, {
         toValue: 1,
@@ -111,6 +126,9 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       })
     ]).start(() => {
       pulseAnimation.start();
+      // --> CHANGE START: Start spin animation
+      spinAnimation.start();
+      // --> CHANGE END
     });
 
     if (isReadyToHide) {
@@ -122,8 +140,24 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       }).start();
     }
 
-    return () => pulseAnimation.stop();
+    return () => {
+      pulseAnimation.stop();
+      // --> CHANGE START: Stop spin animation
+      spinAnimation.stop();
+      // --> CHANGE END
+    };
   }, [isReadyToHide]);
+
+  // --> CHANGE START: Interpolate spin values
+  const spin = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg']
+  });
+  const spinReverse = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['360deg', '0deg']
+  });
+  // --> CHANGE END
 
   return (
     <Animated.View style={[styles.loadingContainer, { opacity: containerOpacity }]} pointerEvents={isReadyToHide ? 'none' : 'auto'}>
@@ -148,6 +182,34 @@ const AnimatedLoader = ({ isReadyToHide }) => {
           style={{ width: 100, height: 100, resizeMode: 'contain', marginBottom: 16 }} 
         />
         <Text style={styles.loaderText}>DealIt</Text>
+
+        {/* --> CHANGE START: Added advanced circular loader UI */}
+        <View style={{ marginTop: 40, alignItems: 'center', justifyContent: 'center', width: 50, height: 50 }}>
+          <Animated.View style={{
+            position: 'absolute',
+            width: 46,
+            height: 46,
+            borderRadius: 23,
+            borderWidth: 3,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            borderTopColor: '#ffffff',
+            borderRightColor: '#ffffff',
+            transform: [{ rotate: spin }]
+          }} />
+          <Animated.View style={{
+            position: 'absolute',
+            width: 30,
+            height: 30,
+            borderRadius: 15,
+            borderWidth: 3,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            borderBottomColor: '#A991E4',
+            borderLeftColor: '#A991E4',
+            transform: [{ rotate: spinReverse }]
+          }} />
+        </View>
+        {/* --> CHANGE END */}
+
       </Animated.View>
     </Animated.View>
   );
@@ -313,6 +375,12 @@ export default function App() {
   const [expoPushToken, setExpoPushToken] = useState('');
   const responseListener = useRef();
 
+  // New addition: Flag to tell web app it is running in mobile
+  const INJECTED_JAVASCRIPT = `
+    window.localStorage.setItem('is_dealit_app', 'true');
+    true;
+  `;
+
   useEffect(() => {
     // Register for push notifications
     registerForPushNotificationsAsync().then(token => {
@@ -340,11 +408,13 @@ export default function App() {
 
   // When WebView finishes loading, push the mobile token into its localStorage
   useEffect(() => {
-    if (isWebLoaded && expoPushToken && webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        window.localStorage.setItem('dealit_mobile_token', '${expoPushToken}');
-        true;
-      `);
+    if (isWebLoaded && webViewRef.current) {
+      if (expoPushToken) {
+        webViewRef.current.injectJavaScript(`
+          window.localStorage.setItem('dealit_mobile_token', '${expoPushToken}');
+          true;
+        `);
+      }
     }
   }, [isWebLoaded, expoPushToken]);
 
@@ -601,6 +671,7 @@ export default function App() {
         <WebView
           ref={webViewRef}
           source={{ uri: WEBSITE_URL }}
+          injectedJavaScript={INJECTED_JAVASCRIPT}
           style={{ flex: 1, backgroundColor: '#000000' }}
           onLoadEnd={() => setIsWebLoaded(true)}
           onNavigationStateChange={(navState) => setCanGoBack(navState.canGoBack)}
