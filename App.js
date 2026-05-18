@@ -9,24 +9,9 @@ import NetInfo from '@react-native-community/netinfo';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 
-// --> CHANGE START: Import Notifications and Device
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-// --> CHANGE END
-
 SplashScreen.preventAutoHideAsync();
 
 const { width, height } = Dimensions.get('window');
-
-// --> CHANGE START: Setup Notification Handler for foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-// --> CHANGE END
 
 const ONBOARDING_DATA = [
   {
@@ -308,65 +293,6 @@ export default function App() {
   const [minLoadTimePassed, setMinLoadTimePassed] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
-
-  // --> CHANGE START: Expo Notification States & Listeners
-  const [expoPushToken, setExpoPushToken] = useState('');
-  const responseListener = useRef();
-
-  useEffect(() => {
-    // Register for push notifications
-    registerForPushNotificationsAsync().then(token => {
-      if (token) setExpoPushToken(token);
-    });
-
-    // Handle user clicking on the notification
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      const urlToOpen = response.notification.request.content.data.url;
-      if (urlToOpen && webViewRef.current) {
-        // Force WebView to navigate to the exact URL
-        webViewRef.current.injectJavaScript(`
-          window.location.href = '${urlToOpen}';
-          true;
-        `);
-      }
-    });
-
-    return () => {
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
-    };
-  }, []);
-
-  // When WebView finishes loading, push the mobile token into its localStorage
-  useEffect(() => {
-    if (isWebLoaded && expoPushToken && webViewRef.current) {
-      webViewRef.current.injectJavaScript(`
-        window.localStorage.setItem('dealit_mobile_token', '${expoPushToken}');
-        true;
-      `);
-    }
-  }, [isWebLoaded, expoPushToken]);
-
-  async function registerForPushNotificationsAsync() {
-    let token;
-    if (Device.isDevice) {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      if (finalStatus !== 'granted') {
-        return null;
-      }
-      token = (await Notifications.getExpoPushTokenAsync({
-        projectId: "65591ba4-dc10-4d7b-8d5a-a45d13b44a8d", // From your eas.json
-      })).data;
-    }
-    return token;
-  }
-  // --> CHANGE END
 
   useEffect(() => {
     (async () => {

@@ -39,8 +39,7 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow DealIt to use your location."
         }
-      ],
-      "expo-notifications" 
+      ]
     ],
     "extra": {
       "eas": {
