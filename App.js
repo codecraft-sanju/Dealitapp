@@ -278,7 +278,6 @@ const OfflineGameScreen = ({ onRetry }) => {
   );
 };
 
-
 export default function App() {
   const WEBSITE_URL = 'https://dealiit.com';
   const webViewRef = useRef(null);
@@ -377,6 +376,40 @@ export default function App() {
   }).current;
 
   const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+
+  // Injection script to forcefully catch Next.js/React frontend errors inside WebView
+  const catchErrorsScript = `
+    (function() {
+      window.onerror = function(message, source, lineno, colno, error) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'WINDOW_ERROR',
+          message: message,
+          line: lineno,
+          col: colno,
+          errorStack: error ? error.stack : 'No stack trace'
+        }));
+        return true;
+      };
+
+      window.addEventListener('unhandledrejection', function(event) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'PROMISE_REJECTION',
+          message: event.reason ? event.reason.toString() : 'Unknown Promise Rejection',
+          stack: event.reason && event.reason.stack ? event.reason.stack : 'No stack trace'
+        }));
+      });
+
+      const originalConsoleError = console.error;
+      console.error = function(...args) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'CONSOLE_ERROR',
+          message: args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')
+        }));
+        originalConsoleError.apply(console, args);
+      };
+    })();
+    true;
+  `;
 
   if (!appIsReady || isFirstLaunch === null) {
     return null;
@@ -533,6 +566,26 @@ export default function App() {
           renderError={() => (
             <OfflineGameScreen onRetry={handleRetry} />
           )}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          thirdPartyCookiesEnabled={true}
+          sharedCookiesEnabled={true}
+          mixedContentMode="always"
+          webviewDebuggingEnabled={true}
+          injectedJavaScript={catchErrorsScript}
+          onMessage={(event) => {
+            try {
+              const errorData = JSON.parse(event.nativeEvent.data);
+              console.log('====================================');
+              console.log('🚨 DEALIIT WEBSITE CRASH LOG 🚨');
+              console.log('Error Type:', errorData.type);
+              console.log('Message:', errorData.message);
+              if (errorData.line) console.log('Line Number:', errorData.line);
+              console.log('====================================');
+            } catch (e) {
+              // Ignore non-JSON messages
+            }
+          }}
         />
       </SafeAreaView>
     </SafeAreaProvider>
