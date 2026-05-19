@@ -9,6 +9,12 @@ import NetInfo from '@react-native-community/netinfo';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 
+// --- ADDED: Expo Web Browser and Auth Session imports ---
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+// --------------------------------------------------------
+
+WebBrowser.maybeCompleteAuthSession();
 SplashScreen.preventAutoHideAsync();
 
 const { width, height } = Dimensions.get('window');
@@ -293,6 +299,44 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
 
+
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    clientId: '332398615342-4qo2qrmbipvvrp4i4nmpllg4fnfs0um9.apps.googleusercontent.com', 
+    androidClientId: '332398615342-aov38tcmstvbsuhi5a41u9dc2p5e7qeu.apps.googleusercontent.com',
+  });
+
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      
+      if (webViewRef.current && id_token) {
+        const injectTokenScript = `
+          try {
+            const data = JSON.stringify({ type: 'GOOGLE_LOGIN_SUCCESS', token: '${id_token}' });
+            window.postMessage(data, '*');
+            document.dispatchEvent(new MessageEvent('message', { data: data }));
+          } catch(e) {}
+          true;
+        `;
+        webViewRef.current.injectJavaScript(injectTokenScript);
+      }
+    } else if (response?.type === 'error' || response?.type === 'dismiss') {
+      if (webViewRef.current) {
+        const errorScript = `
+          try {
+            const data = JSON.stringify({ type: 'GOOGLE_LOGIN_ERROR', message: 'User cancelled or login failed' });
+            window.postMessage(data, '*');
+            document.dispatchEvent(new MessageEvent('message', { data: data }));
+          } catch(e) {}
+          true;
+        `;
+        webViewRef.current.injectJavaScript(errorScript);
+      }
+    }
+  }, [response]);
+  // ----------------------------------------
+
   useEffect(() => {
     (async () => {
       try {
@@ -575,12 +619,20 @@ export default function App() {
           injectedJavaScript={catchErrorsScript}
           onMessage={(event) => {
             try {
-              const errorData = JSON.parse(event.nativeEvent.data);
+              const parsedData = JSON.parse(event.nativeEvent.data);
+              
+              // --- ADDED: Handle Start Google Login Message ---
+              if (parsedData.type === 'START_GOOGLE_LOGIN') {
+                promptAsync();
+                return;
+              }
+              // ----------------------------------------------
+
               console.log('====================================');
               console.log('🚨 DEALIIT WEBSITE CRASH LOG 🚨');
-              console.log('Error Type:', errorData.type);
-              console.log('Message:', errorData.message);
-              if (errorData.line) console.log('Line Number:', errorData.line);
+              console.log('Error Type:', parsedData.type);
+              console.log('Message:', parsedData.message);
+              if (parsedData.line) console.log('Line Number:', parsedData.line);
               console.log('====================================');
             } catch (e) {
               // Ignore non-JSON messages

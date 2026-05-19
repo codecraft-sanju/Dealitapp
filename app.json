@@ -2,19 +2,16 @@
   "expo": {
     "name": "DealIt",
     "slug": "dealit-app",
-    "version": "1.0.13",
+    "version": "1.0.14",
     "orientation": "portrait",
     "icon": "./assets/applogo.png",
     "userInterfaceStyle": "light",
+    "scheme": "dealit",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/applogo.png",
       "resizeMode": "contain",
       "backgroundColor": "#7A43E6" 
-      
-    },
-    "ios": {
-      "supportsTablet": true
     },
     "android": {
       "package": "com.sanjay.dealit",
