@@ -12,48 +12,36 @@ import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 
 SplashScreen.preventAutoHideAsync();
 
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 const { width, height } = Dimensions.get('window');
 
 const ONBOARDING_DATA = [
-  {
-    id: '1',
-    title: 'Welcome to DealIt',
-    description: 'Trade what you have for what you want. Not every deal requires cash.',
-    iconName: 'swap-horizontal-outline',
-    color: '#4A90E2',
-  },
-  {
-    id: '2',
-    title: 'Smart Barter & Credits',
-    description: 'Exchange items directly or earn credits through successful deals to use later.',
-    iconName: 'wallet-outline',
-    color: '#F5A623',
-  },
-  {
-    id: '3',
-    title: 'Safe & Secure',
-    description: 'Connect with verified users. Chat, negotiate, and close deals with confidence.',
-    iconName: 'shield-checkmark-outline',
-    color: '#50E3C2',
-  },
-  {
-    id: '4',
-    title: 'Ready to Deal?',
-    description: 'Join the community and make your first trade today.',
-    iconName: 'rocket-outline',
-    color: '#E91E63',
-  }
+  { id: '1', title: 'Welcome to DealIt', description: 'Trade what you have for what you want. Not every deal requires cash.', iconName: 'swap-horizontal-outline', color: '#4A90E2' },
+  { id: '2', title: 'Smart Barter & Credits', description: 'Exchange items directly or earn credits through successful deals to use later.', iconName: 'wallet-outline', color: '#F5A623' },
+  { id: '3', title: 'Safe & Secure', description: 'Connect with verified users. Chat, negotiate, and close deals with confidence.', iconName: 'shield-checkmark-outline', color: '#50E3C2' },
+  { id: '4', title: 'Ready to Deal?', description: 'Join the community and make your first trade today.', iconName: 'rocket-outline', color: '#E91E63' }
 ];
 
 const AnimatedLoader = ({ isReadyToHide }) => {
-  const scaleValue = useRef(new Animated.Value(0.8)).current;
+  // CHANGE START: Changed initial scale to 0.9 for a tighter, more professional entrance
+  const scaleValue = useRef(new Animated.Value(0.9)).current;
   const opacityValue = useRef(new Animated.Value(0)).current;
-  // CHANGED: Removed glowValue here to keep the background simple
   const containerOpacity = useRef(new Animated.Value(1)).current;
 
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -61,14 +49,7 @@ const AnimatedLoader = ({ isReadyToHide }) => {
   const dot3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // CHANGED: Simplified pulseAnimation by removing the glowValue sequence
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleValue, { toValue: 1.05, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(scaleValue, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
-      ])
-    );
-
+    // CHANGE START: Removed continuous pulse animation on the logo to make it look professional and static after loading
     const createBounceAnimation = (val, delay) => {
       return Animated.sequence([
         Animated.delay(delay),
@@ -90,10 +71,11 @@ const AnimatedLoader = ({ isReadyToHide }) => {
     dotAnim2.start();
     dotAnim3.start();
 
+    // Smooth single entrance animation
     Animated.parallel([
-      Animated.timing(opacityValue, { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.spring(scaleValue, { toValue: 1, friction: 5, tension: 40, useNativeDriver: true })
-    ]).start(() => { pulseAnimation.start(); });
+      Animated.timing(opacityValue, { toValue: 1, duration: 800, useNativeDriver: true }),
+      Animated.spring(scaleValue, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true })
+    ]).start();
 
     if (isReadyToHide) {
       Animated.timing(containerOpacity, {
@@ -102,17 +84,16 @@ const AnimatedLoader = ({ isReadyToHide }) => {
     }
 
     return () => {
-      pulseAnimation.stop();
       dotAnim1.stop();
       dotAnim2.stop();
       dotAnim3.stop();
     };
+    // CHANGE END
   }, [isReadyToHide]);
 
   return (
     <Animated.View style={[styles.loadingContainer, { opacity: containerOpacity }]} pointerEvents={isReadyToHide ? 'none' : 'auto'}>
       <LinearGradient colors={['#CBA4FA', '#7A43E6']} style={StyleSheet.absoluteFillObject} />
-      {/* CHANGED: Removed the Animated.View that contained the logoGlow effect */}
       <Animated.View style={{ opacity: opacityValue, transform: [{ scale: scaleValue }], alignItems: 'center' }}>
         <Image source={require('./assets/applogo.png')} style={{ width: 100, height: 100, resizeMode: 'contain', marginBottom: 16 }} />
         <Text style={styles.loaderText}>DealIt</Text>
@@ -214,6 +195,50 @@ const OfflineGameScreen = ({ onRetry }) => {
   );
 };
 
+// Push Notification Registration Helper
+async function registerForPushNotificationsAsync() {
+  let token;
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#7A43E6',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      console.log('Failed to get push token for push notification!');
+      return;
+    }
+    
+    try {
+      const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+      if (!projectId) {
+        throw new Error('Project ID not found');
+      }
+      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      console.log('Expo Push Token generated:', token);
+    } catch (e) {
+      console.error('Error getting push token:', e);
+    }
+  } else {
+    console.log('Must use physical device for Push Notifications');
+  }
+
+  return token;
+}
+
 export default function App() {
   const WEBSITE_URL = 'https://dealiit.com';
   const webViewRef = useRef(null);
@@ -228,6 +253,12 @@ export default function App() {
   const [minLoadTimePassed, setMinLoadTimePassed] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
+  
+  // Notification State
+  const [expoPushToken, setExpoPushToken] = useState('');
+  const [pendingUrl, setPendingUrl] = useState(null);
+  const notificationListener = useRef();
+  const responseListener = useRef();
 
   useEffect(() => {
     GoogleSignin.configure({
@@ -236,9 +267,86 @@ export default function App() {
     });
   }, []);
   
+  // Initialize Push Notifications
+  useEffect(() => {
+    registerForPushNotificationsAsync().then(token => {
+      if (token) setExpoPushToken(token);
+    });
+
+    // Handle notifications received while app is running
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      console.log('Notification received in foreground:', notification);
+    });
+
+    // Handle user tapping on a notification
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      console.log('Notification tapped. Data:', data);
+      
+      if (data && data.url) {
+        if (isWebLoaded && webViewRef.current) {
+          // If WebView is already loaded, navigate immediately
+          injectRouteToWebView(data.url);
+        } else {
+          // Store the URL to navigate once the WebView finishes loading
+          setPendingUrl(data.url);
+        }
+      }
+    });
+
+    return () => {
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
+  }, [isWebLoaded]);
+
+  // Inject route changes to React Web Frontend
+  const injectRouteToWebView = (url) => {
+    if (webViewRef.current) {
+      console.log(`Injecting route change to: ${url}`);
+      const script = `
+        try {
+          const data = JSON.stringify({ type: 'ROUTE_CHANGE', url: '${url}' });
+          window.postMessage(data, '*');
+          document.dispatchEvent(new MessageEvent('message', { data: data }));
+        } catch(e) {}
+        true;
+      `;
+      webViewRef.current.injectJavaScript(script);
+    }
+  };
+
+  // Pass Expo Push Token to WebView once it's loaded
+  useEffect(() => {
+    if (isWebLoaded && expoPushToken && webViewRef.current) {
+      console.log('Sending push token to WebView...');
+      const script = `
+        try {
+          const data = JSON.stringify({ type: 'EXPO_PUSH_TOKEN', token: '${expoPushToken}' });
+          window.postMessage(data, '*');
+          document.dispatchEvent(new MessageEvent('message', { data: data }));
+        } catch(e) {}
+        true;
+      `;
+      webViewRef.current.injectJavaScript(script);
+    }
+  }, [isWebLoaded, expoPushToken]);
+
+  // Process any pending URL navigations once WebView loads
+  useEffect(() => {
+    if (isWebLoaded && pendingUrl) {
+      injectRouteToWebView(pendingUrl);
+      setPendingUrl(null); // Clear after navigating
+    }
+  }, [isWebLoaded, pendingUrl]);
+
   const handleNativeGoogleSignIn = async () => {
     try {
-      console.log('DEBUG: Starting Google Sign-In...'); // DEBUG
+      console.log('DEBUG: Starting Google Sign-In...'); 
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
       try {
@@ -251,7 +359,7 @@ export default function App() {
       const { idToken } = await GoogleSignin.getTokens();
 
       if (webViewRef.current && idToken) {
-        console.log('DEBUG: Google Sign-In successful, injecting token to WebView'); // DEBUG
+        console.log('DEBUG: Google Sign-In successful, injecting token to WebView'); 
         
         const safeToken = idToken.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
         const script = `
@@ -297,10 +405,10 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        console.log('DEBUG: Checking AsyncStorage for first launch...'); // DEBUG
+        console.log('DEBUG: Checking AsyncStorage for first launch...'); 
         const hasLaunched = await AsyncStorage.getItem('hasLaunched');
         setIsFirstLaunch(hasLaunched === null ? true : false);
-        console.log(`DEBUG: App isFirstLaunch determined as: ${hasLaunched === null}`); // DEBUG
+        console.log(`DEBUG: App isFirstLaunch determined as: ${hasLaunched === null}`); 
       } catch {
         setIsFirstLaunch(false);
       } finally {
@@ -345,14 +453,14 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       const currentConnection = state.isConnected && state.isInternetReachable !== false;
-      console.log(`DEBUG: Network status updated. Connected: ${currentConnection}`); // DEBUG
+      console.log(`DEBUG: Network status updated. Connected: ${currentConnection}`); 
       setIsConnected(currentConnection);
     });
     return () => unsubscribe();
   }, []);
 
   const handleRetry = () => {
-    console.log('DEBUG: Retrying network connection...'); // DEBUG
+    console.log('DEBUG: Retrying network connection...'); 
     NetInfo.fetch().then(state => {
       setIsConnected(state.isConnected && state.isInternetReachable !== false);
       if (state.isConnected && webViewRef.current) webViewRef.current.reload();
@@ -502,7 +610,7 @@ export default function App() {
           source={{ uri: WEBSITE_URL }}
           style={{ flex: 1, backgroundColor: '#000000' }}
           onLoadEnd={() => {
-            console.log('DEBUG: WebView fully loaded.'); // DEBUG
+            console.log('DEBUG: WebView fully loaded.'); 
             setIsWebLoaded(true);
           }}
           onNavigationStateChange={(navState) => setCanGoBack(navState.canGoBack)}
@@ -552,7 +660,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     backgroundColor: 'transparent', zIndex: 999,
   },
-  // CHANGED: Removed logoGlow style as it is no longer needed
   loaderText: { color: '#ffffff', fontSize: 24, fontWeight: '800', letterSpacing: 2 },
   loaderDotsContainer: {
     flexDirection: 'row',
