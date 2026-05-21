@@ -20,7 +20,6 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 
 SplashScreen.preventAutoHideAsync();
 
-
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -39,7 +38,7 @@ const ONBOARDING_DATA = [
 ];
 
 const AnimatedLoader = ({ isReadyToHide }) => {
-  // CHANGE START: Changed initial scale to 0.9 for a tighter, more professional entrance
+ 
   const scaleValue = useRef(new Animated.Value(0.9)).current;
   const opacityValue = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
@@ -71,7 +70,6 @@ const AnimatedLoader = ({ isReadyToHide }) => {
     dotAnim2.start();
     dotAnim3.start();
 
-    // Smooth single entrance animation
     Animated.parallel([
       Animated.timing(opacityValue, { toValue: 1, duration: 800, useNativeDriver: true }),
       Animated.spring(scaleValue, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true })
@@ -195,7 +193,6 @@ const OfflineGameScreen = ({ onRetry }) => {
   );
 };
 
-// Push Notification Registration Helper
 async function registerForPushNotificationsAsync() {
   let token;
 
@@ -254,7 +251,6 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
   
-  // Notification State
   const [expoPushToken, setExpoPushToken] = useState('');
   const [pendingUrl, setPendingUrl] = useState(null);
   const notificationListener = useRef();
@@ -266,29 +262,51 @@ export default function App() {
       offlineAccess: false,
     });
   }, []);
-  
-  // Initialize Push Notifications
-  useEffect(() => {
-    registerForPushNotificationsAsync().then(token => {
-      if (token) setExpoPushToken(token);
-    });
 
-    // Handle notifications received while app is running
+  // CHANGE START: Combined all permissions sequentially into one useEffect to fix crash
+  useEffect(() => {
+    const requestAllPermissionsSequentially = async () => {
+      try {
+        const token = await registerForPushNotificationsAsync();
+        if (token) setExpoPushToken(token);
+
+        await Location.requestForegroundPermissionsAsync();
+        
+        if (Platform.OS === 'android') {
+          await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            {
+              title: "Microphone Permission",
+              message: "DealIt needs access to your microphone for AI voice chat.",
+              buttonNeutral: "Ask Me Later",
+              buttonNegative: "Cancel",
+              buttonPositive: "OK"
+            }
+          );
+        }
+      } catch (err) {
+        console.warn('Permission sequencing error:', err);
+      }
+    };
+
+    requestAllPermissionsSequentially();
+  }, []);
+  // CHANGE END
+  
+  // CHANGE START: Separated notification listeners from initialization
+  useEffect(() => {
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification received in foreground:', notification);
     });
 
-    // Handle user tapping on a notification
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
       console.log('Notification tapped. Data:', data);
       
       if (data && data.url) {
         if (isWebLoaded && webViewRef.current) {
-          // If WebView is already loaded, navigate immediately
           injectRouteToWebView(data.url);
         } else {
-          // Store the URL to navigate once the WebView finishes loading
           setPendingUrl(data.url);
         }
       }
@@ -303,8 +321,8 @@ export default function App() {
       }
     };
   }, [isWebLoaded]);
+  // CHANGE END
 
-  // Inject route changes to React Web Frontend
   const injectRouteToWebView = (url) => {
     if (webViewRef.current) {
       console.log(`Injecting route change to: ${url}`);
@@ -320,7 +338,6 @@ export default function App() {
     }
   };
 
-  // Pass Expo Push Token to WebView once it's loaded
   useEffect(() => {
     if (isWebLoaded && expoPushToken && webViewRef.current) {
       console.log('Sending push token to WebView...');
@@ -336,11 +353,10 @@ export default function App() {
     }
   }, [isWebLoaded, expoPushToken]);
 
-  // Process any pending URL navigations once WebView loads
   useEffect(() => {
     if (isWebLoaded && pendingUrl) {
       injectRouteToWebView(pendingUrl);
-      setPendingUrl(null); // Clear after navigating
+      setPendingUrl(null); 
     }
   }, [isWebLoaded, pendingUrl]);
 
@@ -427,28 +443,6 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [isFirstLaunch]);
-
-  useEffect(() => {
-    (async () => { 
-      await Location.requestForegroundPermissionsAsync(); 
-      if (Platform.OS === 'android') {
-        try {
-          await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-            {
-              title: "Microphone Permission",
-              message: "DealIt needs access to your microphone for AI voice chat.",
-              buttonNeutral: "Ask Me Later",
-              buttonNegative: "Cancel",
-              buttonPositive: "OK"
-            }
-          );
-        } catch (err) {
-          console.warn(err);
-        }
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
