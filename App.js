@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet, StatusBar, BackHandler, View, Text, FlatList,
-  Dimensions, TouchableOpacity, Animated, Easing, Image
+  Dimensions, TouchableOpacity, Animated, Easing, Image,
+  PermissionsAndroid, Platform
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -12,9 +13,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 
-
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-
 
 SplashScreen.preventAutoHideAsync();
 
@@ -51,11 +50,10 @@ const ONBOARDING_DATA = [
   }
 ];
 
-
 const AnimatedLoader = ({ isReadyToHide }) => {
   const scaleValue = useRef(new Animated.Value(0.8)).current;
   const opacityValue = useRef(new Animated.Value(0)).current;
-  const glowValue = useRef(new Animated.Value(0)).current;
+  // CHANGED: Removed glowValue here to keep the background simple
   const containerOpacity = useRef(new Animated.Value(1)).current;
 
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -63,16 +61,11 @@ const AnimatedLoader = ({ isReadyToHide }) => {
   const dot3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // CHANGED: Simplified pulseAnimation by removing the glowValue sequence
     const pulseAnimation = Animated.loop(
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scaleValue, { toValue: 1.05, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(scaleValue, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
-        ]),
-        Animated.sequence([
-          Animated.timing(glowValue, { toValue: 1, duration: 1000, useNativeDriver: true }),
-          Animated.timing(glowValue, { toValue: 0.3, duration: 1000, useNativeDriver: true })
-        ])
+      Animated.sequence([
+        Animated.timing(scaleValue, { toValue: 1.05, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(scaleValue, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
       ])
     );
 
@@ -119,7 +112,7 @@ const AnimatedLoader = ({ isReadyToHide }) => {
   return (
     <Animated.View style={[styles.loadingContainer, { opacity: containerOpacity }]} pointerEvents={isReadyToHide ? 'none' : 'auto'}>
       <LinearGradient colors={['#CBA4FA', '#7A43E6']} style={StyleSheet.absoluteFillObject} />
-      <Animated.View style={[styles.logoGlow, { opacity: glowValue, transform: [{ scale: scaleValue }] }]} />
+      {/* CHANGED: Removed the Animated.View that contained the logoGlow effect */}
       <Animated.View style={{ opacity: opacityValue, transform: [{ scale: scaleValue }], alignItems: 'center' }}>
         <Image source={require('./assets/applogo.png')} style={{ width: 100, height: 100, resizeMode: 'contain', marginBottom: 16 }} />
         <Text style={styles.loaderText}>DealIt</Text>
@@ -132,7 +125,6 @@ const AnimatedLoader = ({ isReadyToHide }) => {
     </Animated.View>
   );
 };
-
 
 const ICONS_LIST = ['cube-outline', 'watch-outline', 'headset-outline', 'game-controller-outline', 'phone-portrait-outline', 'laptop-outline'];
 
@@ -222,7 +214,6 @@ const OfflineGameScreen = ({ onRetry }) => {
   );
 };
 
-
 export default function App() {
   const WEBSITE_URL = 'https://dealiit.com';
   const webViewRef = useRef(null);
@@ -245,13 +236,22 @@ export default function App() {
     });
   }, []);
   
- const handleNativeGoogleSignIn = async () => {
+  const handleNativeGoogleSignIn = async () => {
     try {
+      console.log('DEBUG: Starting Google Sign-In...'); // DEBUG
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      try {
+        await GoogleSignin.signOut();
+      } catch (error) {
+        console.log('No existing session to sign out of');
+      }
+
       await GoogleSignin.signIn();
       const { idToken } = await GoogleSignin.getTokens();
 
       if (webViewRef.current && idToken) {
+        console.log('DEBUG: Google Sign-In successful, injecting token to WebView'); // DEBUG
         
         const safeToken = idToken.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
         const script = `
@@ -291,15 +291,16 @@ export default function App() {
         `;
         webViewRef.current.injectJavaScript(errorScript);
       }
-      /* ---------------------------------------------------------------------------------- */
     }
   };
 
   useEffect(() => {
     (async () => {
       try {
+        console.log('DEBUG: Checking AsyncStorage for first launch...'); // DEBUG
         const hasLaunched = await AsyncStorage.getItem('hasLaunched');
         setIsFirstLaunch(hasLaunched === null ? true : false);
+        console.log(`DEBUG: App isFirstLaunch determined as: ${hasLaunched === null}`); // DEBUG
       } catch {
         setIsFirstLaunch(false);
       } finally {
@@ -320,17 +321,38 @@ export default function App() {
   }, [isFirstLaunch]);
 
   useEffect(() => {
-    (async () => { await Location.requestForegroundPermissionsAsync(); })();
+    (async () => { 
+      await Location.requestForegroundPermissionsAsync(); 
+      if (Platform.OS === 'android') {
+        try {
+          await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            {
+              title: "Microphone Permission",
+              message: "DealIt needs access to your microphone for AI voice chat.",
+              buttonNeutral: "Ask Me Later",
+              buttonNegative: "Cancel",
+              buttonPositive: "OK"
+            }
+          );
+        } catch (err) {
+          console.warn(err);
+        }
+      }
+    })();
   }, []);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
-      setIsConnected(state.isConnected && state.isInternetReachable !== false);
+      const currentConnection = state.isConnected && state.isInternetReachable !== false;
+      console.log(`DEBUG: Network status updated. Connected: ${currentConnection}`); // DEBUG
+      setIsConnected(currentConnection);
     });
     return () => unsubscribe();
   }, []);
 
   const handleRetry = () => {
+    console.log('DEBUG: Retrying network connection...'); // DEBUG
     NetInfo.fetch().then(state => {
       setIsConnected(state.isConnected && state.isInternetReachable !== false);
       if (state.isConnected && webViewRef.current) webViewRef.current.reload();
@@ -387,7 +409,6 @@ export default function App() {
 
   if (!appIsReady || isFirstLaunch === null) return null;
 
-  // ── Onboarding screen ──
   if (isFirstLaunch === true) {
     const buttonBackgroundColor = scrollX.interpolate({
       inputRange: ONBOARDING_DATA.map((_, i) => i * width),
@@ -458,7 +479,6 @@ export default function App() {
     );
   }
 
-  // ── Offline screen ──
   if (!isConnected) {
     return (
       <SafeAreaProvider onLayout={onLayoutRootView}>
@@ -470,7 +490,6 @@ export default function App() {
     );
   }
 
-  // ── Main WebView ──
   const isReadyToHideLoader = minLoadTimePassed && isWebLoaded;
 
   return (
@@ -482,7 +501,10 @@ export default function App() {
           ref={webViewRef}
           source={{ uri: WEBSITE_URL }}
           style={{ flex: 1, backgroundColor: '#000000' }}
-          onLoadEnd={() => setIsWebLoaded(true)}
+          onLoadEnd={() => {
+            console.log('DEBUG: WebView fully loaded.'); // DEBUG
+            setIsWebLoaded(true);
+          }}
           onNavigationStateChange={(navState) => setCanGoBack(navState.canGoBack)}
           renderError={() => <OfflineGameScreen onRetry={handleRetry} />}
           javaScriptEnabled={true}
@@ -492,6 +514,10 @@ export default function App() {
           mixedContentMode="always"
           webviewDebuggingEnabled={true}
           injectedJavaScript={catchErrorsScript}
+          originWhitelist={['*']}
+          allowsInlineMediaPlayback={true}
+          mediaPlaybackRequiresUserAction={false}
+          mediaCapturePermissionGrantType="grant"
           onMessage={(event) => {
             try {
               const parsedData = JSON.parse(event.nativeEvent.data);
@@ -510,7 +536,7 @@ export default function App() {
               if (parsedData.line) console.log('Line Number:', parsedData.line);
               
             } catch (e) {
-          
+              // Failed to parse event data
             }
           }}
         />
@@ -526,10 +552,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     backgroundColor: 'transparent', zIndex: 999,
   },
-  logoGlow: {
-    position: 'absolute', width: 150, height: 150, borderRadius: 75,
-    backgroundColor: '#ffffff', opacity: 0.1, filter: [{ blur: 30 }],
-  },
+  // CHANGED: Removed logoGlow style as it is no longer needed
   loaderText: { color: '#ffffff', fontSize: 24, fontWeight: '800', letterSpacing: 2 },
   loaderDotsContainer: {
     flexDirection: 'row',
