@@ -2,7 +2,8 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet, StatusBar, BackHandler, View, Text, FlatList,
   Dimensions, TouchableOpacity, Animated, Easing, Image,
-  PermissionsAndroid, Platform
+  PermissionsAndroid, Platform,
+  ScrollView // DEBUGGER TOOL START: Added ScrollView for the console logs
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -208,17 +209,17 @@ async function registerForPushNotificationsAsync() {
   if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-    
+   
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-    
+   
     if (finalStatus !== 'granted') {
       console.log('Failed to get push token for push notification!');
       return;
     }
-    
+   
     try {
       const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
       if (!projectId) {
@@ -250,11 +251,16 @@ export default function App() {
   const [minLoadTimePassed, setMinLoadTimePassed] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
-  
+ 
   const [expoPushToken, setExpoPushToken] = useState('');
   const [pendingUrl, setPendingUrl] = useState(null);
   const notificationListener = useRef();
   const responseListener = useRef();
+
+  // DEBUGGER TOOL START: States for logging errors
+  const [debugLogs, setDebugLogs] = useState([]);
+  const [showDebugger, setShowDebugger] = useState(false);
+  // DEBUGGER TOOL END
 
   useEffect(() => {
     GoogleSignin.configure({
@@ -263,7 +269,7 @@ export default function App() {
     });
   }, []);
 
-  // CHANGE START: Combined all permissions sequentially into one useEffect to fix crash
+ 
   useEffect(() => {
     const requestAllPermissionsSequentially = async () => {
       try {
@@ -271,7 +277,7 @@ export default function App() {
         if (token) setExpoPushToken(token);
 
         await Location.requestForegroundPermissionsAsync();
-        
+       
         if (Platform.OS === 'android') {
           await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
@@ -291,9 +297,7 @@ export default function App() {
 
     requestAllPermissionsSequentially();
   }, []);
-  // CHANGE END
-  
-  // CHANGE START: Separated notification listeners from initialization
+
   useEffect(() => {
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification received in foreground:', notification);
@@ -302,7 +306,7 @@ export default function App() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
       console.log('Notification tapped. Data:', data);
-      
+     
       if (data && data.url) {
         if (isWebLoaded && webViewRef.current) {
           injectRouteToWebView(data.url);
@@ -321,7 +325,7 @@ export default function App() {
       }
     };
   }, [isWebLoaded]);
-  // CHANGE END
+
 
   const injectRouteToWebView = (url) => {
     if (webViewRef.current) {
@@ -376,7 +380,7 @@ export default function App() {
 
       if (webViewRef.current && idToken) {
         console.log('DEBUG: Google Sign-In successful, injecting token to WebView'); 
-        
+       
         const safeToken = idToken.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
         const script = `
           try {
@@ -389,9 +393,9 @@ export default function App() {
         webViewRef.current.injectJavaScript(script);
       }
     } catch (error) {
-      
+     
       console.log('Google Sign-In Native Error:', error.code, error.message);
-      
+     
       let message = `Google Sign-In failed: ${error.code || 'Unknown Error'}`;
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         message = 'Sign-in was cancelled.';
@@ -624,24 +628,55 @@ export default function App() {
             try {
               const parsedData = JSON.parse(event.nativeEvent.data);
 
-              
               if (parsedData.type === 'START_GOOGLE_LOGIN') {
                 handleNativeGoogleSignIn();
                 return;
               }
-              
 
-              console.log('====================================');
-              console.log('🚨 DEALIIT WEBSITE CRASH LOG 🚨');
-              console.log('Error Type:', parsedData.type);
-              console.log('Message:', parsedData.message);
-              if (parsedData.line) console.log('Line Number:', parsedData.line);
-              
+              // DEBUGGER TOOL START: Catch and save errors to state
+              if (['WINDOW_ERROR', 'PROMISE_REJECTION', 'CONSOLE_ERROR'].includes(parsedData.type)) {
+                const newLog = `[${parsedData.type}] ${parsedData.message} ${parsedData.line ? '(Line: ' + parsedData.line + ')' : ''}`;
+                setDebugLogs(prevLogs => [newLog, ...prevLogs].slice(0, 30));
+              }
+
+              console.log('🚨 LOG:', parsedData.type, parsedData.message);
+           
+             
             } catch (e) {
-              // Failed to parse event data
+            
             }
           }}
         />
+
+      
+        <TouchableOpacity 
+          style={styles.debugButton} 
+          onPress={() => setShowDebugger(!showDebugger)}
+        >
+          <Ionicons name="bug-outline" size={24} color="#fff" />
+        </TouchableOpacity>
+
+        {showDebugger && (
+          <View style={styles.debugOverlay}>
+            <View style={styles.debugHeader}>
+              <Text style={styles.debugTitle}>Live Website Errors</Text>
+              <TouchableOpacity onPress={() => setDebugLogs([])}>
+                <Text style={styles.clearText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.debugScroll}>
+              {debugLogs.length === 0 ? (
+                <Text style={styles.logText}>No errors yet... (All good!)</Text>
+              ) : (
+                debugLogs.map((log, index) => (
+                  <Text key={index} style={styles.logText}>{log}</Text>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        )}
+     
+
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -737,4 +772,25 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#555555',
   },
   retryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
+
+  // DEBUGGER TOOL START: Styles
+  debugButton: {
+    position: 'absolute', bottom: 40, right: 20,
+    backgroundColor: '#FF4B4B', padding: 12, borderRadius: 25,
+    elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, zIndex: 1000,
+  },
+  debugOverlay: {
+    position: 'absolute', top: 50, left: 10, right: 10, bottom: 100,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)', borderRadius: 10,
+    borderWidth: 1, borderColor: '#333', zIndex: 999, padding: 10,
+  },
+  debugHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderBottomWidth: 1, borderBottomColor: '#333', paddingBottom: 10, marginBottom: 10,
+  },
+  debugTitle: { color: '#50E3C2', fontSize: 16, fontWeight: 'bold' },
+  clearText: { color: '#FF4B4B', fontSize: 14, fontWeight: 'bold' },
+  debugScroll: { flex: 1 },
+  logText: { color: '#fff', fontSize: 12, marginBottom: 8, fontFamily: 'monospace' },
+  // DEBUGGER TOOL END
 });
