@@ -49,7 +49,6 @@ const AnimatedLoader = ({ isReadyToHide }) => {
   const dot3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // CHANGE START: Removed continuous pulse animation on the logo to make it look professional and static after loading
     const createBounceAnimation = (val, delay) => {
       return Animated.sequence([
         Animated.delay(delay),
@@ -87,7 +86,7 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       dotAnim2.stop();
       dotAnim3.stop();
     };
-    // CHANGE END
+   
   }, [isReadyToHide]);
 
   return (
@@ -316,14 +315,16 @@ export default function App() {
       }
     });
 
+    // CHANGE START: Updated the listener removal method to fix the undefined error
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
+    // CHANGE END
   }, [isWebLoaded]);
 
 
@@ -640,15 +641,15 @@ export default function App() {
               }
 
               console.log('🚨 LOG:', parsedData.type, parsedData.message);
-           
+            
              
             } catch (e) {
-            
+             
             }
           }}
         />
 
-      
+       
         <TouchableOpacity 
           style={styles.debugButton} 
           onPress={() => setShowDebugger(!showDebugger)}
@@ -675,7 +676,7 @@ export default function App() {
             </ScrollView>
           </View>
         )}
-     
+      
 
       </SafeAreaView>
     </SafeAreaProvider>
