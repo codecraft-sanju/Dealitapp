@@ -3,7 +3,7 @@ import {
   StyleSheet, StatusBar, BackHandler, View, Text, FlatList,
   Dimensions, TouchableOpacity, Animated, Easing, Image,
   PermissionsAndroid, Platform,
-  ScrollView // DEBUGGER TOOL START: Added ScrollView for the console logs
+  ScrollView 
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -18,6 +18,8 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+
+import AuthScreen from './AuthScreen';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -39,7 +41,7 @@ const ONBOARDING_DATA = [
 ];
 
 const AnimatedLoader = ({ isReadyToHide }) => {
- 
+  
   const scaleValue = useRef(new Animated.Value(0.9)).current;
   const opacityValue = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
@@ -86,7 +88,7 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       dotAnim2.stop();
       dotAnim3.stop();
     };
-   
+    
   }, [isReadyToHide]);
 
   return (
@@ -208,17 +210,17 @@ async function registerForPushNotificationsAsync() {
   if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
-   
+    
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
-   
+    
     if (finalStatus !== 'granted') {
       console.log('Failed to get push token for push notification!');
       return;
     }
-   
+    
     try {
       const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
       if (!projectId) {
@@ -250,16 +252,18 @@ export default function App() {
   const [minLoadTimePassed, setMinLoadTimePassed] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
- 
+  
+  const [nativeUser, setNativeUser] = useState(null);
+  const [nativeToken, setNativeToken] = useState(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  
   const [expoPushToken, setExpoPushToken] = useState('');
   const [pendingUrl, setPendingUrl] = useState(null);
   const notificationListener = useRef();
   const responseListener = useRef();
 
-  // DEBUGGER TOOL START: States for logging errors
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebugger, setShowDebugger] = useState(false);
-  // DEBUGGER TOOL END
 
   useEffect(() => {
     GoogleSignin.configure({
@@ -268,7 +272,7 @@ export default function App() {
     });
   }, []);
 
- 
+  
   useEffect(() => {
     const requestAllPermissionsSequentially = async () => {
       try {
@@ -276,7 +280,7 @@ export default function App() {
         if (token) setExpoPushToken(token);
 
         await Location.requestForegroundPermissionsAsync();
-       
+        
         if (Platform.OS === 'android') {
           await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
@@ -305,7 +309,7 @@ export default function App() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
       console.log('Notification tapped. Data:', data);
-     
+      
       if (data && data.url) {
         if (isWebLoaded && webViewRef.current) {
           injectRouteToWebView(data.url);
@@ -315,7 +319,6 @@ export default function App() {
       }
     });
 
-    // CHANGE START: Updated the listener removal method to fix the undefined error
     return () => {
       if (notificationListener.current) {
         notificationListener.current.remove();
@@ -324,7 +327,6 @@ export default function App() {
         responseListener.current.remove();
       }
     };
-    // CHANGE END
   }, [isWebLoaded]);
 
 
@@ -365,74 +367,24 @@ export default function App() {
     }
   }, [isWebLoaded, pendingUrl]);
 
-  const handleNativeGoogleSignIn = async () => {
-    try {
-      console.log('DEBUG: Starting Google Sign-In...'); 
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-
-      try {
-        await GoogleSignin.signOut();
-      } catch (error) {
-        console.log('No existing session to sign out of');
-      }
-
-      await GoogleSignin.signIn();
-      const { idToken } = await GoogleSignin.getTokens();
-
-      if (webViewRef.current && idToken) {
-        console.log('DEBUG: Google Sign-In successful, injecting token to WebView'); 
-       
-        const safeToken = idToken.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
-        const script = `
-          try {
-            const data = JSON.stringify({ type: 'GOOGLE_LOGIN_SUCCESS', token: \`${safeToken}\` });
-            window.postMessage(data, '*');
-            document.dispatchEvent(new MessageEvent('message', { data: data }));
-          } catch(e) {}
-          true;
-        `;
-        webViewRef.current.injectJavaScript(script);
-      }
-    } catch (error) {
-     
-      console.log('Google Sign-In Native Error:', error.code, error.message);
-     
-      let message = `Google Sign-In failed: ${error.code || 'Unknown Error'}`;
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        message = 'Sign-in was cancelled.';
-      } else if (error.code === statusCodes.IN_PROGRESS) {
-        message = 'Sign-in is already in progress.';
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        message = 'Google Play Services not available.';
-      } else if (error.code === 'DEVELOPER_ERROR') {
-        message = 'Developer Error: SHA-1 or Client ID mismatch in Google Console.';
-      }
-
-      if (webViewRef.current) {
-        const safeMessage = message.replace(/'/g, "\\'");
-        const errorScript = `
-          try {
-            const data = JSON.stringify({ type: 'GOOGLE_LOGIN_ERROR', message: '${safeMessage}' });
-            window.postMessage(data, '*');
-            document.dispatchEvent(new MessageEvent('message', { data: data }));
-          } catch(e) {}
-          true;
-        `;
-        webViewRef.current.injectJavaScript(errorScript);
-      }
-    }
-  };
-
   useEffect(() => {
     (async () => {
       try {
-        console.log('DEBUG: Checking AsyncStorage for first launch...'); 
+        console.log('DEBUG: Checking AsyncStorage for first launch and auth...'); 
         const hasLaunched = await AsyncStorage.getItem('hasLaunched');
         setIsFirstLaunch(hasLaunched === null ? true : false);
-        console.log(`DEBUG: App isFirstLaunch determined as: ${hasLaunched === null}`); 
+        
+        const userStr = await AsyncStorage.getItem('dealit_user');
+        const token = await AsyncStorage.getItem('dealit_token');
+        if (userStr && token) {
+          setNativeUser(userStr);
+          setNativeToken(token);
+        }
+
       } catch {
         setIsFirstLaunch(false);
       } finally {
+        setIsAuthChecking(false);
         setAppIsReady(true);
       }
     })();
@@ -486,6 +438,13 @@ export default function App() {
 
   const viewConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
 
+  const authInjectionScript = `
+    window.localStorage.setItem('is_dealit_app', 'true');
+    ${nativeToken ? `window.localStorage.setItem('dealit_token', '${nativeToken}');` : ''}
+    ${nativeUser ? `window.localStorage.setItem('dealit_user', '${nativeUser.replace(/'/g, "\\'")}');` : ''}
+    true;
+  `;
+
   const catchErrorsScript = `
     (function() {
       window.onerror = function(message, source, lineno, colno, error) {
@@ -514,7 +473,7 @@ export default function App() {
     true;
   `;
 
-  if (!appIsReady || isFirstLaunch === null) return null;
+  if (!appIsReady || isFirstLaunch === null || isAuthChecking) return null;
 
   if (isFirstLaunch === true) {
     const buttonBackgroundColor = scrollX.interpolate({
@@ -597,6 +556,22 @@ export default function App() {
     );
   }
 
+  if (!nativeToken) {
+    return (
+      <SafeAreaProvider onLayout={onLayoutRootView}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f4f2f9' }}>
+          <StatusBar barStyle="dark-content" backgroundColor="#f4f2f9" />
+          <AuthScreen 
+            onLoginSuccess={(user, token) => {
+              setNativeUser(JSON.stringify(user));
+              setNativeToken(token);
+            }} 
+          />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    );
+  }
+
   const isReadyToHideLoader = minLoadTimePassed && isWebLoaded;
 
   return (
@@ -620,6 +595,8 @@ export default function App() {
           sharedCookiesEnabled={true}
           mixedContentMode="always"
           webviewDebuggingEnabled={true}
+       
+          injectedJavaScriptBeforeContentLoaded={authInjectionScript}
           injectedJavaScript={catchErrorsScript}
           originWhitelist={['*']}
           allowsInlineMediaPlayback={true}
@@ -629,26 +606,26 @@ export default function App() {
             try {
               const parsedData = JSON.parse(event.nativeEvent.data);
 
-              if (parsedData.type === 'START_GOOGLE_LOGIN') {
-                handleNativeGoogleSignIn();
+              if (parsedData.type === 'LOGOUT_REQUEST') {
+                console.log('LOGOUT_REQUEST received');
+                AsyncStorage.removeItem('dealit_user');
+                AsyncStorage.removeItem('dealit_token');
+                setNativeToken(null);
+                setNativeUser(null);
                 return;
               }
 
-              // DEBUGGER TOOL START: Catch and save errors to state
               if (['WINDOW_ERROR', 'PROMISE_REJECTION', 'CONSOLE_ERROR'].includes(parsedData.type)) {
                 const newLog = `[${parsedData.type}] ${parsedData.message} ${parsedData.line ? '(Line: ' + parsedData.line + ')' : ''}`;
                 setDebugLogs(prevLogs => [newLog, ...prevLogs].slice(0, 30));
               }
 
               console.log('🚨 LOG:', parsedData.type, parsedData.message);
-            
-             
             } catch (e) {
              
             }
           }}
         />
-
        
         <TouchableOpacity 
           style={styles.debugButton} 
@@ -676,8 +653,6 @@ export default function App() {
             </ScrollView>
           </View>
         )}
-      
-
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -774,7 +749,6 @@ const styles = StyleSheet.create({
   },
   retryButtonText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
 
-  // DEBUGGER TOOL START: Styles
   debugButton: {
     position: 'absolute', bottom: 40, right: 20,
     backgroundColor: '#FF4B4B', padding: 12, borderRadius: 25,
@@ -793,5 +767,5 @@ const styles = StyleSheet.create({
   clearText: { color: '#FF4B4B', fontSize: 14, fontWeight: 'bold' },
   debugScroll: { flex: 1 },
   logText: { color: '#fff', fontSize: 12, marginBottom: 8, fontFamily: 'monospace' },
-  // DEBUGGER TOOL END
+  
 });
