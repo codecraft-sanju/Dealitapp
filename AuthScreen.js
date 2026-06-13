@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,7 +11,8 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
-  Alert
+  Alert,
+  Image
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,61 +20,55 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 
-import FloatInput from './FloatInput';
-
 const { width, height } = Dimensions.get('window');
 
 const API_URL = 'https://api.dealiit.com/api';
 
+const FALLBACK_AVATARS = [
+  'https://i.pravatar.cc/100?img=47',
+  'https://i.pravatar.cc/100?img=12',
+  'https://i.pravatar.cc/100?img=32',
+  'https://i.pravatar.cc/100?img=16'
+];
+
 export default function AuthScreen({ navigation, onLoginSuccess }) {
-
-  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [isSignUpMode, setIsSignUpMode] = useState(false);
+  const [email, setEmail] = useState('');
   const [showOtp, setShowOtp] = useState(false);
-  
-
-  const [isForgotMode, setIsForgotMode] = useState(false);
-  const [forgotStep, setForgotStep] = useState(1);
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetOtp, setResetOtp] = useState(['', '', '', '', '', '']);
-  const [newPassword, setNewPassword] = useState('');
-  const resetOtpInputs = useRef([]);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-
-  const [formData, setFormData] = useState({
-    full_name: '', email: '', password: '', phone: '', city: '', referralCode: ''
-  });
-  
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [avatars, setAvatars] = useState([]);
+  
   const otpInputs = useRef([]);
 
-  const handleChange = (name, value) => {
-    setFormData({ ...formData, [name]: value });
+  useEffect(() => {
+    const fetchAvatars = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/users/random-avatars`);
+        if (res.data.success && res.data.data) {
+          setAvatars(res.data.data.slice(0, 4));
+        }
+      } catch (err) {
+        console.log('Failed to fetch avatars, using fallbacks');
+      }
+    };
+    fetchAvatars();
+  }, []);
+
+  const handleOtpChange = (value, index) => {
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+    if (value && index < 5) otpInputs.current[index + 1].focus();
   };
 
-  const handleOtpChange = (value, index, isReset = false) => {
-    if (isReset) {
-      const newOtp = [...resetOtp];
-      newOtp[index] = value;
-      setResetOtp(newOtp);
-      if (value && index < 5) resetOtpInputs.current[index + 1].focus();
-    } else {
-      const newOtp = [...otp];
-      newOtp[index] = value;
-      setOtp(newOtp);
-      if (value && index < 5) otpInputs.current[index + 1].focus();
-    }
-  };
-
-  const switchMode = () => {
-    setIsLoginMode(!isLoginMode);
+  const handleModeSwitch = (mode) => {
+    setIsSignUpMode(mode === 'signup');
     setError('');
-    setSuccessMsg('');
     setShowOtp(false);
-    setIsForgotMode(false);
+    setEmail('');
+    setOtp(['', '', '', '', '', '']);
   };
 
   const storeSession = async (user, token) => {
@@ -85,46 +81,41 @@ export default function AuthScreen({ navigation, onLoginSuccess }) {
     }
   };
 
-  const handleAuth = async () => {
+  const handleAuthSubmit = async () => {
+    if (!email) return;
     setError(''); setLoading(true);
+    
+    const endpoint = isSignUpMode ? `${API_URL}/users/register` : `${API_URL}/users/login`;
+    
     try {
-      const endpoint = isLoginMode ? '/users/login' : '/users/register';
-      const payload = isLoginMode 
-        ? { email: formData.email, password: formData.password }
-        : formData;
-
-      const res = await axios.post(`${API_URL}${endpoint}`, payload);
-
+      const res = await axios.post(endpoint, { email });
+      
       if (res.data.success) {
-        if (res.data.requiresOtp) {
-          setRegisteredEmail(res.data.email || formData.email);
-          setShowOtp(true);
-        } else {
-          await storeSession(res.data.user, res.data.token);
-        }
+        setShowOtp(true);
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
+      if (err.response) setError(err.response.data.message || 'Something went wrong.');
+      else setError('Network Error: Cannot reach server.');
+    } finally { 
+      setLoading(false); 
     }
   };
 
   const handleVerifyOtp = async () => {
     const otpValue = otp.join('');
     if (otpValue.length < 6) return;
+    
     setError(''); setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/users/verify-otp`, { 
-        email: registeredEmail, otp: otpValue 
-      });
+      const res = await axios.post(`${API_URL}/users/verify-otp`, { email, otp: otpValue });
       if (res.data.success) {
+        await AsyncStorage.setItem('showWelcomeBonus', 'true');
         await storeSession(res.data.user, res.data.token);
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid or expired OTP.');
-    } finally {
-      setLoading(false);
+    } finally { 
+      setLoading(false); 
     }
   };
 
@@ -157,282 +148,551 @@ export default function AuthScreen({ navigation, onLoginSuccess }) {
     }
   };
 
-  // --- Forgot Password Logic ---
-  const handleSendResetOtp = async () => {
-    if (!resetEmail) return;
-    setError(''); setSuccessMsg(''); setLoading(true);
-    try {
-      const res = await axios.post(`${API_URL}/users/forgotpassword`, { email: resetEmail });
-      if (res.data.success) {
-        setSuccessMsg('OTP sent to your email!');
-        setForgotStep(2);
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send OTP.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResetPassword = async () => {
-    const otpValue = resetOtp.join('');
-    if (otpValue.length < 6 || !newPassword) return;
-    setError(''); setSuccessMsg(''); setLoading(true);
-    try {
-      const res = await axios.post(`${API_URL}/users/resetpassword`, { 
-        email: resetEmail, otp: otpValue, newPassword 
-      });
-      if (res.data.success) {
-        await storeSession(res.data.user, res.data.token);
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Invalid OTP or Password.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const backToLogin = () => {
-    setIsForgotMode(false);
-    setForgotStep(1);
-    setResetEmail('');
-    setResetOtp(['', '', '', '', '', '']);
-    setNewPassword('');
-    setError('');
-    setSuccessMsg('');
-  };
+  const displayAvatars = avatars.length === 4 ? avatars : FALLBACK_AVATARS;
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.background}>
-        <View style={[styles.orb, styles.orb1]} />
-        <View style={[styles.orb, styles.orb2]} />
+    <View style={styles.awRoot}>
+      
+      {/* HERO SECTION */}
+      <LinearGradient colors={['#3A1078', '#2A0463', '#1A0042']} style={styles.newHeroSection}>
+        <View style={styles.newHeroHeader}>
+          <View style={styles.mbBrand}>
+            <Image source={require('./assets/applogo.png')} style={styles.brandLogo} />
+            <Text style={styles.brandText}>dealit</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.topToggleBtn} 
+            onPress={() => handleModeSwitch(isSignUpMode ? 'login' : 'signup')}
+          >
+            <Text style={styles.topToggleBtnText}>
+              {isSignUpMode ? 'Login' : 'Sign Up'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.newHeroContent}>
+          <Text style={styles.heroMainTitle}>
+            {isSignUpMode ? 'Join Dealit &\n' : 'Welcome Back to\n'}
+            <Text style={styles.textYellow}>
+              {isSignUpMode ? 'Get 100 Credits' : 'Dealit'}
+            </Text>
+            {isSignUpMode ? '\nInstantly!' : ''}
+          </Text>
+          
+          <View style={styles.heroBenefits}>
+            <View style={styles.benefitRow}>
+              <Ionicons name="pricetag" size={14} color="#e9d8ff" />
+              <Text style={styles.benefitText}>{isSignUpMode ? 'List items, earn credits' : 'Check new offers'}</Text>
+            </View>
+            <View style={styles.benefitRow}>
+              <Ionicons name="bag-handle" size={14} color="#e9d8ff" />
+              <Text style={styles.benefitText}>{isSignUpMode ? 'Buy anything with credits' : 'Spend your credits'}</Text>
+            </View>
+            <View style={styles.benefitRow}>
+              <Ionicons name="flash" size={14} color="#e9d8ff" />
+              <Text style={styles.benefitText}>{isSignUpMode ? 'No hidden charges' : 'Complete your trades'}</Text>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+
+      {/* STATS BANNER */}
+      <View style={styles.statsBannerWrap}>
+        <View style={styles.statsBanner}>
+          <View style={styles.avatarsContainer}>
+            {displayAvatars.map((src, i) => {
+              const finalSrc = src.includes('ui-avatars.com') ? FALLBACK_AVATARS[i] : src;
+              return (
+                <Image 
+                  key={i} 
+                  source={{ uri: finalSrc }} 
+                  style={[styles.avatar, i > 0 && { marginLeft: -8 }]} 
+                />
+              );
+            })}
+          </View>
+          <Text style={styles.statsText}>
+            <Text style={{ fontWeight: 'bold' }}>5000+ </Text>
+            happy users already earning & saving
+          </Text>
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
-        {/* --- FORGOT PASSWORD FLOW --- */}
-        {isForgotMode ? (
-          <>
-            <View style={styles.header}>
-              <View style={styles.brandContainer}>
-                <Ionicons name="swap-horizontal" size={28} color="#6B46C1" />
-                <Text style={styles.brandText}>dealit</Text>
-              </View>
-              <Text style={styles.title}>{forgotStep === 1 ? 'Reset Password' : 'Secure Account'}</Text>
-              <Text style={styles.subtitle}>
-                {forgotStep === 1 
-                  ? 'Enter your registered email address' 
-                  : `Code sent to ${resetEmail}`}
-              </Text>
-            </View>
-
-            {error !== '' && <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>}
-            {successMsg !== '' && <View style={styles.successBox}><Text style={styles.successText}>{successMsg}</Text></View>}
-
-            {forgotStep === 1 ? (
-              <View style={styles.formContainer}>
-                <FloatInput icon="mail-outline" label="Email address" value={resetEmail} onChangeText={setResetEmail} keyboardType="email-address" autoCapitalize="none" />
-                
-                <TouchableOpacity activeOpacity={0.8} onPress={handleSendResetOtp} disabled={loading || !resetEmail}>
-                  <LinearGradient colors={['#805ad5', '#6B46C1']} style={styles.submitBtn}>
-                    {loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitBtnText}>Send OTP</Text><Ionicons name="arrow-forward" size={20} color="#fff" /></>}
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={{ marginTop: 24, alignItems: 'center' }} onPress={backToLogin}>
-                  <Text style={styles.switchAction}>← Back to Login</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.otpContainer}>
-                <View style={styles.otpGrid}>
-                  {resetOtp.map((digit, index) => (
-                    <TextInput
-                      key={index}
-                      ref={(ref) => resetOtpInputs.current[index] = ref}
-                      style={[styles.otpBox, digit !== '' && styles.otpBoxFilled]}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                      value={digit}
-                      onChangeText={(val) => handleOtpChange(val, index, true)}
-                      onKeyPress={({ nativeEvent }) => {
-                        if (nativeEvent.key === 'Backspace' && digit === '' && index > 0) {
-                          resetOtpInputs.current[index - 1].focus();
-                        }
-                      }}
-                    />
-                  ))}
-                </View>
-
-                <View style={{ width: '100%', marginTop: 20, marginBottom: 14 }}>
-                  <FloatInput icon="lock-closed-outline" label="New Password" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
-                </View>
-
-                <TouchableOpacity activeOpacity={0.8} onPress={handleResetPassword} disabled={loading || resetOtp.join('').length < 6 || !newPassword} style={{ width: '100%' }}>
-                  <LinearGradient colors={['#805ad5', '#6B46C1']} style={styles.submitBtn}>
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Reset & Login</Text>}
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={{ marginTop: 24, alignItems: 'center' }} onPress={() => {setForgotStep(1); setError(''); setSuccessMsg('');}}>
-                  <Text style={styles.switchAction}>Wrong email? Go back</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        ) : (
-          /* --- LOGIN / SIGNUP FLOW --- */
-          <>
-            <View style={styles.header}>
-              <View style={styles.brandContainer}>
-                <Ionicons name="swap-horizontal" size={28} color="#6B46C1" />
-                <Text style={styles.brandText}>dealit</Text>
-              </View>
-              <Text style={styles.title}>
-                {showOtp ? 'Verify email' : (isLoginMode ? 'Welcome back' : 'Create account')}
-              </Text>
-              <Text style={styles.subtitle}>
-                {showOtp 
-                  ? `Code sent to ${registeredEmail}` 
-                  : (isLoginMode ? 'Sign in to your account' : 'Join and start trading smarter')}
-              </Text>
-            </View>
-
-            {error !== '' && <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>}
-
+      {/* BOTTOM SHEET */}
+      <View style={styles.mbSheet}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
+            
             {!showOtp ? (
-              <View style={styles.formContainer}>
-                <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleLogin} disabled={loading}>
-                  <Ionicons name="logo-google" size={20} color="#DB4437" />
-                  <Text style={styles.googleBtnText}>Continue with Google</Text>
-                </TouchableOpacity>
-
-                <View style={styles.dividerContainer}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or {isLoginMode ? 'sign in' : 'register'} with email</Text>
-                  <View style={styles.dividerLine} />
+              /* --- LOGIN / SIGNUP FLOW --- */
+              <View style={styles.formStep}>
+                <View style={styles.formHeader}>
+                  <Text style={styles.awHeading}>{isSignUpMode ? 'Create your account' : 'Welcome back'}</Text>
+                  <Text style={styles.awSub}>{isSignUpMode ? 'It takes less than 10 seconds!' : 'Sign in to continue'}</Text>
+                  {error !== '' && <Text style={styles.awError}>{error}</Text>}
                 </View>
 
-                {!isLoginMode && (
-                  <FloatInput icon="person-outline" label="Full name" value={formData.full_name} onChangeText={(v) => handleChange('full_name', v)} />
-                )}
-                
-                <FloatInput icon="mail-outline" label="Email address" value={formData.email} onChangeText={(v) => handleChange('email', v)} keyboardType="email-address" autoCapitalize="none" />
-                <FloatInput icon="lock-closed-outline" label="Password" value={formData.password} onChangeText={(v) => handleChange('password', v)} secureTextEntry />
-
-                {!isLoginMode && (
-                  <>
-                    <FloatInput icon="call-outline" label="Phone number" value={formData.phone} onChangeText={(v) => handleChange('phone', v)} keyboardType="phone-pad" />
-                    <View style={styles.row}>
-                      <View style={{ flex: 1, marginRight: 8 }}>
-                        <FloatInput icon="location-outline" label="City" value={formData.city} onChangeText={(v) => handleChange('city', v)} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <FloatInput icon="gift-outline" label="Refer code" value={formData.referralCode} onChangeText={(v) => handleChange('referralCode', v)} autoCapitalize="characters" />
-                      </View>
+                <View style={styles.awForm}>
+                  <View style={styles.emailInputWrapper}>
+                    <View style={styles.emailIconBox}>
+                      <Ionicons name="mail" size={20} color="#6B46C1" />
                     </View>
-                  </>
-                )}
+                    <TextInput 
+                      style={styles.emailInput} 
+                      placeholder="Enter your email address" 
+                      placeholderTextColor="#9ca3af"
+                      value={email}
+                      onChangeText={setEmail}
+                      keyboardType="email-address" 
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+                  
+                  <View style={styles.verifyBadge}>
+                    <Ionicons name="shield-checkmark" size={14} color="#7c3aed" />
+                    <Text style={styles.verifyBadgeText}>We'll send you an OTP to verify</Text>
+                  </View>
 
-                {isLoginMode && (
-                  <TouchableOpacity style={styles.forgotBtn} onPress={() => setIsForgotMode(true)}>
-                    <Text style={styles.forgotText}>Forgot password?</Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity activeOpacity={0.8} onPress={handleAuth} disabled={loading}>
-                  <LinearGradient colors={['#805ad5', '#6B46C1']} style={styles.submitBtn}>
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <>
-                        <Text style={styles.submitBtnText}>{isLoginMode ? 'Sign In' : 'Create Account'}</Text>
-                        <Ionicons name="arrow-forward" size={20} color="#fff" />
-                      </>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <View style={styles.switchContainer}>
-                  <Text style={styles.switchText}>{isLoginMode ? "Don't have an account? " : "Already have an account? "}</Text>
-                  <TouchableOpacity onPress={switchMode}>
-                    <Text style={styles.switchAction}>{isLoginMode ? 'Sign Up' : 'Sign In'}</Text>
+                  <TouchableOpacity activeOpacity={0.8} onPress={handleAuthSubmit} disabled={loading || !email}>
+                    <View style={[styles.awBtn, (loading || !email) && styles.awBtnDisabled]}>
+                      {loading ? <ActivityIndicator color="#fff" /> : (
+                        <>
+                          <Text style={styles.awBtnText}>Continue</Text>
+                          <Ionicons name="arrow-forward" size={18} color="#fff" />
+                        </>
+                      )}
+                    </View>
                   </TouchableOpacity>
                 </View>
+
+                <View style={styles.dividerSection}>
+                  <View style={styles.googleDivider}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
+                  
+                  <TouchableOpacity style={styles.googleOutlinedBtn} onPress={handleGoogleLogin} disabled={loading}>
+                    <Ionicons name="logo-google" size={20} color="#DB4437" />
+                    <Text style={styles.googleOutlinedBtnText}>Continue with Google</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.trustBadges}>
+                  <View style={styles.badgeItem}>
+                    <View style={styles.badgeIcon}><Ionicons name="shield-checkmark" size={18} color="#6B46C1" /></View>
+                    <Text style={styles.badgeTitle}>100% Free</Text>
+                    <Text style={styles.badgeSub}>No hidden fees</Text>
+                  </View>
+                  <View style={styles.badgeItem}>
+                    <View style={styles.badgeIcon}><Ionicons name="checkmark-circle" size={18} color="#6B46C1" /></View>
+                    <Text style={styles.badgeTitle}>Safe & Secure</Text>
+                    <Text style={styles.badgeSub}>Your data is protected</Text>
+                  </View>
+                  <View style={styles.badgeItem}>
+                    <View style={styles.badgeIcon}><Ionicons name="people" size={18} color="#6B46C1" /></View>
+                    <Text style={styles.badgeTitle}>For Everyone</Text>
+                    <Text style={styles.badgeSub}>Buy, sell & save</Text>
+                  </View>
+                </View>
+                
+                <Text style={styles.footerTerms}>
+                  By continuing, you agree to Dealit's{'\n'}
+                  <Text style={styles.footerLink}>Terms of Service</Text> and <Text style={styles.footerLink}>Privacy Policy</Text>
+                </Text>
               </View>
             ) : (
-              <View style={styles.otpContainer}>
-                <View style={styles.otpGrid}>
-                  {otp.map((digit, index) => (
-                    <TextInput
-                      key={index}
-                      ref={(ref) => otpInputs.current[index] = ref}
-                      style={[styles.otpBox, digit !== '' && styles.otpBoxFilled]}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                      value={digit}
-                      onChangeText={(val) => handleOtpChange(val, index)}
-                      onKeyPress={({ nativeEvent }) => {
-                        if (nativeEvent.key === 'Backspace' && digit === '' && index > 0) {
-                          otpInputs.current[index - 1].focus();
-                        }
-                      }}
-                    />
-                  ))}
+              /* --- OTP SCREEN --- */
+              <View style={styles.formStep}>
+                <View style={styles.formHeader}>
+                  <Text style={styles.awHeading}>Verify email</Text>
+                  <Text style={styles.awSubOtp}>
+                    Code sent to{'\n'}<Text style={{fontWeight: 'bold', color: '#111827'}}>{email}</Text>
+                  </Text>
+                  {error !== '' && <Text style={styles.awError}>{error}</Text>}
                 </View>
 
-                <TouchableOpacity activeOpacity={0.8} onPress={handleVerifyOtp} disabled={loading || otp.join('').length < 6}>
-                  <LinearGradient colors={['#805ad5', '#6B46C1']} style={[styles.submitBtn, { marginTop: 20 }]}>
-                    {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Verify & Login</Text>}
-                  </LinearGradient>
-                </TouchableOpacity>
+                <View style={styles.awForm}>
+                  <View style={styles.otpGrid}>
+                    {otp.map((digit, index) => (
+                      <TextInput
+                        key={index}
+                        ref={(ref) => otpInputs.current[index] = ref}
+                        style={[styles.otpBox, digit !== '' && styles.otpBoxFilled]}
+                        keyboardType="number-pad"
+                        maxLength={1}
+                        value={digit}
+                        onChangeText={(val) => handleOtpChange(val, index)}
+                        onKeyPress={({ nativeEvent }) => {
+                          if (nativeEvent.key === 'Backspace' && digit === '' && index > 0) {
+                            otpInputs.current[index - 1].focus();
+                          }
+                        }}
+                      />
+                    ))}
+                  </View>
 
-                <TouchableOpacity style={{ marginTop: 20, alignItems: 'center' }} onPress={() => setShowOtp(false)}>
-                  <Text style={styles.switchAction}>Go back</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity activeOpacity={0.8} onPress={handleVerifyOtp} disabled={loading || otp.join('').length < 6}>
+                    <View style={[styles.awBtn, (loading || otp.join('').length < 6) && styles.awBtnDisabled]}>
+                      {loading ? <ActivityIndicator color="#fff" /> : (
+                        <>
+                          <Text style={styles.awBtnText}>Verify & Login</Text>
+                          <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                        </>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.backBtnContainer}>
+                  <TouchableOpacity onPress={() => setShowOtp(false)}>
+                    <Text style={styles.awSwitchBtn}>Wrong email? Go back</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={{ flex: 1 }} />
               </View>
             )}
-          </>
-        )}
 
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f4f2f9' },
-  background: { ...StyleSheet.absoluteFillObject, overflow: 'hidden', zIndex: 0 },
-  orb: { position: 'absolute', borderRadius: 300, opacity: 0.4 },
-  orb1: { width: 400, height: 400, backgroundColor: '#d6bcfa', top: -100, left: -100 },
-  orb2: { width: 350, height: 350, backgroundColor: '#e9d8ff', bottom: -50, right: -100 },
-  scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: 24, zIndex: 1 },
-  header: { marginBottom: 30, alignItems: 'center' },
-  brandContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  brandText: { fontSize: 24, fontWeight: '800', color: '#6B46C1', marginLeft: 8 },
-  title: { fontSize: 32, fontWeight: '800', color: '#111827', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#6b7280', fontWeight: '500' },
-  errorBox: { backgroundColor: '#fef2f2', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#fecaca', marginBottom: 20 },
-  errorText: { color: '#ef4444', fontSize: 12, fontWeight: '600', textAlign: 'center' },
-  successBox: { backgroundColor: '#ecfdf5', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#a7f3d0', marginBottom: 20 },
-  successText: { color: '#059669', fontSize: 12, fontWeight: '600', textAlign: 'center' },
-  formContainer: { width: '100%' },
-  googleBtn: { flexDirection: 'row', backgroundColor: '#ffffff', height: 52, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
-  googleBtnText: { fontSize: 15, fontWeight: '600', color: '#374151', marginLeft: 10 },
-  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#e5e7eb' },
-  dividerText: { marginHorizontal: 12, fontSize: 12, color: '#9ca3af', textTransform: 'uppercase', fontWeight: '600' },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  forgotBtn: { alignSelf: 'flex-end', marginBottom: 20 },
-  forgotText: { color: '#805ad5', fontWeight: '700', fontSize: 13 },
-  submitBtn: { height: 56, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', shadowColor: '#6B46C1', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-  submitBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700', marginRight: 8 },
-  switchContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
-  switchText: { color: '#6b7280', fontSize: 14, fontWeight: '500' },
-  switchAction: { color: '#6B46C1', fontSize: 14, fontWeight: '700' },
-  otpContainer: { width: '100%', alignItems: 'center' },
-  otpGrid: { flexDirection: 'row', justifyContent: 'center', width: '100%', gap: 10 },
-  otpBox: { width: 45, height: 55, backgroundColor: '#f8f6ff', borderWidth: 1.5, borderColor: '#e9d8ff', borderRadius: 12, textAlign: 'center', fontSize: 20, fontWeight: '800', color: '#1f2937' },
-  otpBoxFilled: { borderColor: '#6B46C1', backgroundColor: '#f5f0ff', color: '#6B46C1' }
+  awRoot: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  newHeroSection: {
+    flex: 0.38,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    paddingHorizontal: 24,
+    zIndex: 1,
+  },
+  newHeroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  mbBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  brandLogo: {
+    width: 26,
+    height: 26,
+    resizeMode: 'contain',
+    marginRight: 6,
+  },
+  brandText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: -0.5,
+  },
+  topToggleBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+  },
+  topToggleBtnText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  newHeroContent: {
+    flex: 1,
+    justifyContent: 'flex-start',
+  },
+  heroMainTitle: {
+    color: '#ffffff',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800',
+    marginBottom: 12,
+    letterSpacing: -0.5,
+  },
+  textYellow: {
+    color: '#FCD34D',
+  },
+  heroBenefits: {
+    marginTop: 5,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  benefitText: {
+    color: '#e9d8ff',
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  statsBannerWrap: {
+    position: 'absolute',
+    top: '38%',
+    transform: [{ translateY: -25 }],
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  statsBanner: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 5,
+    width: '100%',
+  },
+  avatarsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  avatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: '#fff',
+    backgroundColor: '#f3f4f6',
+  },
+  statsText: {
+    fontSize: 11,
+    color: '#4b5563',
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  mbSheet: {
+    flex: 0.62,
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 45, // Clears the overlap banner
+    paddingHorizontal: 24,
+    zIndex: 10,
+  },
+  sheetContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
+  formStep: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  formHeader: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  awHeading: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
+    letterSpacing: -0.5,
+  },
+  awSub: {
+    fontSize: 13,
+    color: '#7c3aed',
+    fontWeight: '600',
+  },
+  awSubOtp: {
+    fontSize: 13,
+    color: '#4b5563',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  awError: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderWidth: 1,
+    color: '#ef4444',
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 10,
+    width: '100%',
+    textAlign: 'center',
+  },
+  awForm: {
+    width: '100%',
+  },
+  emailInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderWidth: 1,
+    borderColor: '#6B46C1',
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  emailIconBox: {
+    paddingHorizontal: 14,
+    borderRightWidth: 1,
+    borderRightColor: '#e5e7eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emailInput: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 14,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827',
+  },
+  verifyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 12,
+  },
+  verifyBadgeText: {
+    fontSize: 12,
+    color: '#7c3aed',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  awBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6B46C1',
+    height: 52,
+    borderRadius: 12,
+  },
+  awBtnDisabled: {
+    opacity: 0.7,
+  },
+  awBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  dividerSection: {
+    width: '100%',
+    marginVertical: 15,
+  },
+  googleDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e5e7eb',
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    color: '#9ca3af',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  googleOutlinedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+  },
+  googleOutlinedBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginLeft: 10,
+  },
+  trustBadges: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: 15,
+  },
+  badgeItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  badgeIcon: {
+    backgroundColor: '#f5f3ff',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  badgeTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  badgeSub: {
+    fontSize: 9,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  footerTerms: {
+    textAlign: 'center',
+    fontSize: 10,
+    color: '#6b7280',
+    lineHeight: 16,
+    marginTop: 10,
+  },
+  footerLink: {
+    color: '#6B46C1',
+    fontWeight: '600',
+  },
+  otpGrid: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginVertical: 20,
+  },
+  otpBox: {
+    width: 44,
+    height: 52,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#d1d5db',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    backgroundColor: '#faf8ff',
+    color: '#1f2937',
+  },
+  otpBoxFilled: {
+    borderColor: '#6B46C1',
+    backgroundColor: '#f5f3ff',
+  },
+  backBtnContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  awSwitchBtn: {
+    color: '#6B46C1',
+    fontSize: 13,
+    fontWeight: '600',
+  }
 });

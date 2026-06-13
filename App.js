@@ -41,7 +41,6 @@ const ONBOARDING_DATA = [
 ];
 
 const AnimatedLoader = ({ isReadyToHide }) => {
-  
   const scaleValue = useRef(new Animated.Value(0.9)).current;
   const opacityValue = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
@@ -88,7 +87,6 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       dotAnim2.stop();
       dotAnim3.stop();
     };
-    
   }, [isReadyToHide]);
 
   return (
@@ -138,7 +136,6 @@ async function registerForPushNotificationsAsync() {
       }
       
       token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-      
     }
   } catch (e) {
     console.log(`Token generation failed: ${e.message}`);
@@ -178,7 +175,6 @@ export default function App() {
     });
   }, []);
 
-  
   useEffect(() => {
     const requestAllPermissionsSequentially = async () => {
       try {
@@ -209,7 +205,6 @@ export default function App() {
 
   useEffect(() => {
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-  
     });
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
@@ -248,6 +243,7 @@ export default function App() {
       webViewRef.current.injectJavaScript(script);
     }
   };
+
   useEffect(() => {
     const syncPushTokenToBackend = async () => {
       if (nativeToken && expoPushToken) {
@@ -273,6 +269,7 @@ export default function App() {
 
     syncPushTokenToBackend();
   }, [nativeToken, expoPushToken]);
+
   useEffect(() => {
     if (isWebLoaded && pendingUrl) {
       injectRouteToWebView(pendingUrl);
@@ -466,11 +463,14 @@ export default function App() {
     );
   }
 
+  // --- CHANGED THIS SECTION ---
   if (!nativeToken) {
     return (
       <SafeAreaProvider onLayout={onLayoutRootView}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f4f2f9' }}>
-          <StatusBar barStyle="dark-content" backgroundColor="#f4f2f9" />
+        {/* Updated backgroundColor to match the new dark AuthScreen Hero */}
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#3A1078' }}>
+          {/* Changed barStyle to light-content */}
+          <StatusBar barStyle="light-content" backgroundColor="#3A1078" />
           <AuthScreen 
             onLoginSuccess={(user, token) => {
               setNativeUser(JSON.stringify(user));
@@ -481,6 +481,7 @@ export default function App() {
       </SafeAreaProvider>
     );
   }
+  // ----------------------------
 
   const isReadyToHideLoader = minLoadTimePassed && isWebLoaded;
 
@@ -524,11 +525,9 @@ export default function App() {
               }
 
               if (['WINDOW_ERROR', 'PROMISE_REJECTION', 'CONSOLE_ERROR'].includes(parsedData.type)) {
-                
                 console.log(`[WEB ${parsedData.type}] ${parsedData.message}`);
               }
             } catch (e) {
-            
             }
           }}
         />
