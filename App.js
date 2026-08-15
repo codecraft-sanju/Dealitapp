@@ -18,6 +18,12 @@ import Constants from 'expo-constants';
 import axios from 'axios';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
+import * as Speech from 'expo-speech';
+
+
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+
 import AuthScreen from './AuthScreen';
 import OfflineGameScreen from './OfflineGameScreen';
 
@@ -241,6 +247,43 @@ export default function App() {
         true;
       `;
       webViewRef.current.injectJavaScript(script);
+    }
+  };
+
+  // CHANGED: Added a helper function to send events back to the Web UI
+  const notifyWebUI = (actionType) => {
+    if (webViewRef.current) {
+      const script = `
+        try {
+          window.dispatchEvent(new CustomEvent('NATIVE_APP_EVENT', { detail: { type: '${actionType}' } }));
+        } catch(e) {}
+        true;
+      `;
+      webViewRef.current.injectJavaScript(script);
+    }
+  };
+
+  // CHANGED: Added function to handle PDF download and sharing
+  const downloadAndSharePDF = async (base64Data, filename) => {
+    try {
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+      
+      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Download Statement',
+        });
+      } else {
+        alert('Sharing is not available on this device');
+      }
+    } catch (error) {
+      console.error('Error saving PDF:', error);
+      alert('Failed to save statement.');
     }
   };
 
@@ -521,6 +564,29 @@ export default function App() {
                 AsyncStorage.removeItem('dealit_token');
                 setNativeToken(null);
                 setNativeUser(null);
+                return;
+              }
+
+              // CHANGED: Added DOWNLOAD_PDF handler
+              if (parsedData.type === 'DOWNLOAD_PDF') {
+                downloadAndSharePDF(parsedData.base64, parsedData.filename);
+                return;
+              }
+
+              // CHANGED: Added native speech handlers to listen for events from your Web UI
+              if (parsedData.type === 'START_NATIVE_SPEECH') {
+                Speech.speak(parsedData.text, {
+                  pitch: 1,
+                  rate: 0.95,
+                  onDone: () => notifyWebUI('SPEECH_FINISHED'),
+                  onStopped: () => notifyWebUI('SPEECH_FINISHED'),
+                  onError: () => notifyWebUI('SPEECH_FINISHED')
+                });
+                return;
+              }
+
+              if (parsedData.type === 'STOP_NATIVE_SPEECH') {
+                Speech.stop();
                 return;
               }
 
