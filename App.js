@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet, StatusBar, BackHandler, View, Text, FlatList,
   Dimensions, TouchableOpacity, Animated, Easing, Image,
-  PermissionsAndroid, Platform
+  PermissionsAndroid, Platform, Share
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -19,7 +19,6 @@ import axios from 'axios';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 import * as Speech from 'expo-speech';
-
 
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -47,35 +46,56 @@ const ONBOARDING_DATA = [
 ];
 
 const AnimatedLoader = ({ isReadyToHide }) => {
+  const [loaderType] = useState(() => Math.random() > 0.5 ? 'premium' : 'classic');
+
   const scaleValue = useRef(new Animated.Value(0.9)).current;
   const opacityValue = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
 
+  
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
   const dot3 = useRef(new Animated.Value(0)).current;
 
+ 
+  const textWipeValue = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
-    const createBounceAnimation = (val, delay) => {
-      return Animated.sequence([
-        Animated.delay(delay),
-        Animated.loop(
+    let dotAnim1, dotAnim2, dotAnim3;
+    let wipeAnim;
+
+    if (loaderType === 'classic') {
+    
+      const createBounceAnimation = (val, delay) => {
+        return Animated.loop(
           Animated.sequence([
-            Animated.timing(val, { toValue: -12, duration: 300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-            Animated.timing(val, { toValue: 0, duration: 300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-            Animated.delay(400)
+            Animated.delay(delay),
+            Animated.timing(val, { toValue: -12, duration: 400, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+            Animated.timing(val, { toValue: 0, duration: 400, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+            Animated.delay(300 - delay)
           ])
-        )
-      ]);
-    };
+        );
+      };
 
-    const dotAnim1 = createBounceAnimation(dot1, 0);
-    const dotAnim2 = createBounceAnimation(dot2, 150);
-    const dotAnim3 = createBounceAnimation(dot3, 300);
+      dotAnim1 = createBounceAnimation(dot1, 0);
+      dotAnim2 = createBounceAnimation(dot2, 150);
+      dotAnim3 = createBounceAnimation(dot3, 300);
 
-    dotAnim1.start();
-    dotAnim2.start();
-    dotAnim3.start();
+      dotAnim1.start();
+      dotAnim2.start();
+      dotAnim3.start();
+    } else {
+     
+      wipeAnim = Animated.timing(textWipeValue, {
+        toValue: 1,
+        duration: 1600,
+        delay: 300,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false 
+      });
+      
+      wipeAnim.start();
+    }
 
     Animated.parallel([
       Animated.timing(opacityValue, { toValue: 1, duration: 800, useNativeDriver: true }),
@@ -89,23 +109,48 @@ const AnimatedLoader = ({ isReadyToHide }) => {
     }
 
     return () => {
-      dotAnim1.stop();
-      dotAnim2.stop();
-      dotAnim3.stop();
+      if (dotAnim1) dotAnim1.stop();
+      if (dotAnim2) dotAnim2.stop();
+      if (dotAnim3) dotAnim3.stop();
+      if (wipeAnim) wipeAnim.stop();
     };
-  }, [isReadyToHide]);
+  }, [isReadyToHide, loaderType]);
 
   return (
     <Animated.View style={[styles.loadingContainer, { opacity: containerOpacity }]} pointerEvents={isReadyToHide ? 'none' : 'auto'}>
-      <LinearGradient colors={['#CBA4FA', '#7A43E6']} style={StyleSheet.absoluteFillObject} />
-      <Animated.View style={{ opacity: opacityValue, transform: [{ scale: scaleValue }], alignItems: 'center' }}>
-        <Image source={require('./assets/applogo.png')} style={{ width: 100, height: 100, resizeMode: 'contain', marginBottom: 16 }} />
-        <Text style={styles.loaderText}>DealIt</Text>
-        <View style={styles.loaderDotsContainer}>
-          <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot1 }] }]} />
-          <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot2 }] }]} />
-          <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot3 }] }]} />
-        </View>
+      <LinearGradient colors={loaderType === 'classic' ? ['#CBA4FA', '#7A43E6'] : ['#0F0518', '#000000']} style={StyleSheet.absoluteFillObject} />
+      
+      <Animated.View style={{ opacity: opacityValue, transform: [{ scale: scaleValue }], alignItems: 'center', justifyContent: 'center' }}>
+        
+        {loaderType === 'classic' ? (
+          <>
+            <Image source={require('./assets/applogo.png')} style={{ width: 100, height: 100, resizeMode: 'contain', marginBottom: 16, zIndex: 2 }} />
+            <Text style={styles.loaderText}>DealIt</Text>
+            <View style={styles.loaderDotsContainer}>
+              <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot1 }] }]} />
+              <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot2 }] }]} />
+              <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot3 }] }]} />
+            </View>
+          </>
+        ) : (
+          <View style={{ alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }}>
+            {/* Base dull text */}
+            <Text style={[styles.premiumText, { color: '#333333' }]}>DealIt</Text>
+            
+            {/* Animated wipe fill text overlay */}
+            <Animated.View style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              overflow: 'hidden',
+              width: textWipeValue.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] })
+            }}>
+              <Text style={[styles.premiumText, { color: '#A78BFA' }]} numberOfLines={1}>DealIt</Text>
+            </Animated.View>
+          </View>
+        )}
+
       </Animated.View>
     </Animated.View>
   );
@@ -250,7 +295,6 @@ export default function App() {
     }
   };
 
-  // CHANGED: Added a helper function to send events back to the Web UI
   const notifyWebUI = (actionType) => {
     if (webViewRef.current) {
       const script = `
@@ -263,29 +307,46 @@ export default function App() {
     }
   };
 
-  // CHANGED: Added function to handle PDF download and sharing
-  const downloadAndSharePDF = async (base64Data, filename) => {
-    try {
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
-      
-      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Download Statement',
-        });
-      } else {
-        alert('Sharing is not available on this device');
-      }
-    } catch (error) {
-      console.error('Error saving PDF:', error);
-      alert('Failed to save statement.');
+ 
+const downloadAndSharePDF = async (base64Data, filename) => {
+  try {
+    if (!base64Data) {
+      throw new Error('Empty file data received from website.');
     }
-  };
+
+    const fileUri = `${FileSystem.documentDirectory}${filename}`;
+    const cleanBase64 = base64Data.replace(/\s/g, '');
+
+    await FileSystem.writeAsStringAsync(fileUri, cleanBase64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Download Statement',
+        UTI: 'com.adobe.pdf' 
+      });
+    } else {
+      throw new Error('Sharing is not available on this device');
+    }
+  } catch (error) {
+    console.error('Error saving PDF:', error);
+    
+    
+    if (webViewRef.current) {
+      const errorMessage = error.message || 'Unknown Native Error';
+      const script = `
+        try {
+          window.dispatchEvent(new CustomEvent('NATIVE_APP_ERROR', { detail: ${JSON.stringify(errorMessage)} }));
+        } catch(e) {}
+        true;
+      `;
+      webViewRef.current.injectJavaScript(script);
+    }
+  }
+};
 
   useEffect(() => {
     const syncPushTokenToBackend = async () => {
@@ -506,13 +567,10 @@ export default function App() {
     );
   }
 
-  // --- CHANGED THIS SECTION ---
   if (!nativeToken) {
     return (
       <SafeAreaProvider onLayout={onLayoutRootView}>
-        {/* Updated backgroundColor to match the new dark AuthScreen Hero */}
         <SafeAreaView style={{ flex: 1, backgroundColor: '#3A1078' }}>
-          {/* Changed barStyle to light-content */}
           <StatusBar barStyle="light-content" backgroundColor="#3A1078" />
           <AuthScreen 
             onLoginSuccess={(user, token) => {
@@ -524,7 +582,6 @@ export default function App() {
       </SafeAreaProvider>
     );
   }
-  // ----------------------------
 
   const isReadyToHideLoader = minLoadTimePassed && isWebLoaded;
 
@@ -567,13 +624,21 @@ export default function App() {
                 return;
               }
 
-              // CHANGED: Added DOWNLOAD_PDF handler
               if (parsedData.type === 'DOWNLOAD_PDF') {
                 downloadAndSharePDF(parsedData.base64, parsedData.filename);
                 return;
               }
 
-              // CHANGED: Added native speech handlers to listen for events from your Web UI
+           if (parsedData.type === 'NATIVE_SHARE') {
+               
+                Share.share({
+                  title: parsedData.title,
+                  message: Platform.OS === 'android' ? `${parsedData.message}\n${parsedData.url}` : parsedData.message,
+                  url: Platform.OS === 'ios' ? parsedData.url : undefined
+                });
+                return;
+              }
+
               if (parsedData.type === 'START_NATIVE_SPEECH') {
                 Speech.speak(parsedData.text, {
                   pitch: 1,
@@ -610,6 +675,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent', zIndex: 999,
   },
   loaderText: { color: '#ffffff', fontSize: 24, fontWeight: '800', letterSpacing: 2 },
+  
+
+  premiumText: {
+    fontSize: 48,
+    fontWeight: '900',
+    letterSpacing: -2,
+  },
+
   loaderDotsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -624,6 +697,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
     opacity: 0.9,
   },
+  
   slide: {
     width, flex: 1, justifyContent: 'center', alignItems: 'center',
     paddingHorizontal: 30, paddingBottom: 80,
