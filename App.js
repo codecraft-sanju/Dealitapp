@@ -46,26 +46,26 @@ const ONBOARDING_DATA = [
 ];
 
 const AnimatedLoader = ({ isReadyToHide }) => {
-  const [loaderType] = useState(() => Math.random() > 0.5 ? 'premium' : 'classic');
+  const [loaderType] = useState('premium');
 
   const scaleValue = useRef(new Animated.Value(0.9)).current;
   const opacityValue = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
 
-  
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
   const dot3 = useRef(new Animated.Value(0)).current;
 
- 
   const textWipeValue = useRef(new Animated.Value(0)).current;
+  const glowScale = useRef(new Animated.Value(0.8)).current;
+  const glowOpacity = useRef(new Animated.Value(0.2)).current;
 
   useEffect(() => {
     let dotAnim1, dotAnim2, dotAnim3;
     let wipeAnim;
+    let glowAnim;
 
     if (loaderType === 'classic') {
-    
       const createBounceAnimation = (val, delay) => {
         return Animated.loop(
           Animated.sequence([
@@ -85,12 +85,25 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       dotAnim2.start();
       dotAnim3.start();
     } else {
-     
+      glowAnim = Animated.loop(
+        Animated.sequence([
+          Animated.parallel([
+            Animated.timing(glowScale, { toValue: 1.2, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+            Animated.timing(glowOpacity, { toValue: 0.6, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+          ]),
+          Animated.parallel([
+            Animated.timing(glowScale, { toValue: 0.8, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+            Animated.timing(glowOpacity, { toValue: 0.2, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+          ])
+        ])
+      );
+      glowAnim.start();
+
       wipeAnim = Animated.timing(textWipeValue, {
         toValue: 1,
-        duration: 1600,
-        delay: 300,
-        easing: Easing.inOut(Easing.ease),
+        duration: 3000,
+        delay: 400,
+        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
         useNativeDriver: false 
       });
       
@@ -113,6 +126,7 @@ const AnimatedLoader = ({ isReadyToHide }) => {
       if (dotAnim2) dotAnim2.stop();
       if (dotAnim3) dotAnim3.stop();
       if (wipeAnim) wipeAnim.stop();
+      if (glowAnim) glowAnim.stop();
     };
   }, [isReadyToHide, loaderType]);
 
@@ -125,7 +139,7 @@ const AnimatedLoader = ({ isReadyToHide }) => {
         {loaderType === 'classic' ? (
           <>
             <Image source={require('./assets/applogo.png')} style={{ width: 100, height: 100, resizeMode: 'contain', marginBottom: 16, zIndex: 2 }} />
-            <Text style={styles.loaderText}>DealIt</Text>
+            <Text style={styles.loaderText}>Dealit</Text>
             <View style={styles.loaderDotsContainer}>
               <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot1 }] }]} />
               <Animated.View style={[styles.loaderDot, { transform: [{ translateY: dot2 }] }]} />
@@ -133,21 +147,25 @@ const AnimatedLoader = ({ isReadyToHide }) => {
             </View>
           </>
         ) : (
-          <View style={{ alignItems: 'center', justifyContent: 'center', flexDirection: 'row' }}>
-            {/* Base dull text */}
-            <Text style={[styles.premiumText, { color: '#333333' }]}>DealIt</Text>
+          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.View style={[styles.breathingGlow, { transform: [{ scale: glowScale }], opacity: glowOpacity }]} />
             
-            {/* Animated wipe fill text overlay */}
-            <Animated.View style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              bottom: 0,
-              overflow: 'hidden',
-              width: textWipeValue.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] })
-            }}>
-              <Text style={[styles.premiumText, { color: '#A78BFA' }]} numberOfLines={1}>DealIt</Text>
-            </Animated.View>
+            <View style={{ flexDirection: 'row', zIndex: 2 }}>
+              {/* Base dull text */}
+              <Text style={[styles.premiumText, { color: 'rgba(255, 255, 255, 0.1)' }]}>DealIt</Text>
+              
+              {/* Animated wipe fill text overlay */}
+              <Animated.View style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                bottom: 0,
+                overflow: 'hidden',
+                width: textWipeValue.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] })
+              }}>
+                <Text style={[styles.premiumText, { color: '#A78BFA', textShadowColor: 'rgba(167, 139, 250, 0.8)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 15 }]} numberOfLines={1}>DealIt</Text>
+              </Animated.View>
+            </View>
           </View>
         )}
 
@@ -280,7 +298,6 @@ export default function App() {
     };
   }, [isWebLoaded]);
 
-
   const injectRouteToWebView = (url) => {
     if (webViewRef.current) {
       const script = `
@@ -307,46 +324,47 @@ export default function App() {
     }
   };
 
- 
-const downloadAndSharePDF = async (base64Data, filename) => {
-  try {
-    if (!base64Data) {
-      throw new Error('Empty file data received from website.');
-    }
+  const downloadAndSharePDF = async (base64Data, filename) => {
+    try {
+      if (!base64Data) {
+        throw new Error('Empty file data received from website.');
+      }
 
-    const fileUri = `${FileSystem.documentDirectory}${filename}`;
-    const cleanBase64 = base64Data.replace(/\s/g, '');
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+  
+      const cleanBase64 = String(base64Data).replace(/\s/g, '');
 
-    await FileSystem.writeAsStringAsync(fileUri, cleanBase64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-
-    const canShare = await Sharing.isAvailableAsync();
-    if (canShare) {
-      await Sharing.shareAsync(fileUri, {
-        mimeType: 'application/pdf',
-        dialogTitle: 'Download Statement',
-        UTI: 'com.adobe.pdf' 
+      await FileSystem.writeAsStringAsync(fileUri, cleanBase64, {
+  
+        encoding: 'base64',
       });
-    } else {
-      throw new Error('Sharing is not available on this device');
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Download Statement',
+          UTI: 'com.adobe.pdf' 
+        });
+      } else {
+        throw new Error('Sharing is not available on this device');
+      }
+    } catch (error) {
+      console.error('Error saving PDF:', error);
+  
+  
+      if (webViewRef.current) {
+        const errorMessage = error.message || 'Unknown Native Error';
+        const script = `
+          try {
+            window.dispatchEvent(new CustomEvent('NATIVE_APP_ERROR', { detail: ${JSON.stringify(errorMessage)} }));
+          } catch(e) {}
+          true;
+        `;
+        webViewRef.current.injectJavaScript(script);
+      }
     }
-  } catch (error) {
-    console.error('Error saving PDF:', error);
-    
-    
-    if (webViewRef.current) {
-      const errorMessage = error.message || 'Unknown Native Error';
-      const script = `
-        try {
-          window.dispatchEvent(new CustomEvent('NATIVE_APP_ERROR', { detail: ${JSON.stringify(errorMessage)} }));
-        } catch(e) {}
-        true;
-      `;
-      webViewRef.current.injectJavaScript(script);
-    }
-  }
-};
+  };
 
   useEffect(() => {
     const syncPushTokenToBackend = async () => {
@@ -409,7 +427,7 @@ const downloadAndSharePDF = async (base64Data, filename) => {
 
   useEffect(() => {
     if (isFirstLaunch === false) {
-      const timer = setTimeout(() => setMinLoadTimePassed(true), 2500);
+      const timer = setTimeout(() => setMinLoadTimePassed(true), 3500);
       return () => clearTimeout(timer);
     }
   }, [isFirstLaunch]);
@@ -630,7 +648,7 @@ const downloadAndSharePDF = async (base64Data, filename) => {
               }
 
            if (parsedData.type === 'NATIVE_SHARE') {
-               
+                
                 Share.share({
                   title: parsedData.title,
                   message: Platform.OS === 'android' ? `${parsedData.message}\n${parsedData.url}` : parsedData.message,
@@ -676,11 +694,22 @@ const styles = StyleSheet.create({
   },
   loaderText: { color: '#ffffff', fontSize: 24, fontWeight: '800', letterSpacing: 2 },
   
-
   premiumText: {
-    fontSize: 48,
-    fontWeight: '900',
-    letterSpacing: -2,
+    fontSize: 52,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+  breathingGlow: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(167, 139, 250, 0.4)',
+    shadowColor: '#A78BFA',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 50,
+    elevation: 10,
   },
 
   loaderDotsContainer: {
