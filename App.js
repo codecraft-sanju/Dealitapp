@@ -20,7 +20,8 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 import * as Speech from 'expo-speech';
 
-import * as FileSystem from 'expo-file-system';
+// import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
 import AuthScreen from './AuthScreen';
